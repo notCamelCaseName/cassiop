@@ -1,9 +1,15 @@
 use crate::utility::required_extension_names;
 use std::sync::Arc;
 
-use log::{debug, error, log_enabled, info, Level};
+use log::{debug, info};
 
 use ash::vk;
+use winit::event::{Event, VirtualKeyCode, ElementState, KeyboardInput, WindowEvent};
+use winit::event_loop::{EventLoop, ControlFlow};
+
+const WINDOW_TITLE: &'static str = "DoomApp";
+const WINDOW_WIDTH: u32 = 800;
+const WINDOW_HEIGHT: u32 = 600;
 
 pub struct DoomApp {
     _entry: Arc<ash::Entry>,
@@ -34,10 +40,21 @@ impl DoomApp {
 
         let reqs = required_extension_names();
 
+        let flags = if 
+            cfg!(target_os = "macos")
+        {
+            info!("Enabling extensions for macOS portability.");
+            vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
+        } else {
+            vk::InstanceCreateFlags::empty()
+        };
+
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
+            .flags(flags)
             .enabled_extension_names(&reqs)
             .build();
+
         unsafe {entry.create_instance(&create_info, None).unwrap()}
     }
 
@@ -51,8 +68,51 @@ impl DoomApp {
         }
     }
 
+    pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
+        winit::window::WindowBuilder::new()
+            .with_title(WINDOW_TITLE)
+            .with_inner_size(winit::dpi::LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+            .build(event_loop)
+            .expect("Couldn't create window.")
+    }
+
+    pub fn main_loop(event_loop: EventLoop<()>) {
+
+        event_loop.run(move |event, _, control_flow| {
+
+            match event {
+                | Event::WindowEvent { event, .. } => {
+                    match event {
+                        | WindowEvent::CloseRequested => {
+                            *control_flow = ControlFlow::Exit
+                        },
+                        | WindowEvent::KeyboardInput { input, .. } => {
+                            match input {
+                                | KeyboardInput { virtual_keycode, state, .. } => {
+                                    match (virtual_keycode, state) {
+                                        | (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
+                                            dbg!();
+                                            *control_flow = ControlFlow::Exit
+                                        },
+                                        | _ => {},
+                                    }
+                                },
+                            }
+                        },
+                        | _ => {},
+                    }
+                },
+                _ => (),
+            }
+
+        })
+    }
+
     pub fn run(self) {
-        todo!("No running for now")
+        let event_loop = EventLoop::new();
+        let _window = DoomApp::init_window(&event_loop);
+
+        DoomApp::main_loop(event_loop);
     }
 }
 
