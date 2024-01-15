@@ -13,7 +13,7 @@ use cocoa::appkit::{NSView, NSWindow};
 #[cfg(target_os = "macos")]
 use cocoa::base::id as cocoa_id;
 #[cfg(target_os = "macos")]
-use metal::CoreAnimationLayer;
+use metal::CAMetalLayer;
 #[cfg(target_os = "macos")]
 use objc::runtime::YES;
 

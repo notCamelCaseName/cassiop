@@ -8,3 +8,6 @@ edition = "2021"
 [dependencies]
 ash = { version = "0.37.3", features = ["linked"] }
 winit = "0.28.0"
+cocoa = "0.25.0"
+metal = "0.27.0"
+objc = "0.2.7"
