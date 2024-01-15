@@ -1,32 +1,42 @@
 use crate::utility::required_extension_names;
+use std::sync::Arc;
+
+use log::{debug, error, log_enabled, info, Level};
 
 use ash::vk;
 
 pub struct DoomApp {
+    _entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
 }
 
 impl DoomApp {
     pub fn new() -> Self {
-        let entry = ash::Entry::linked();
-        let instance = DoomApp::create_instance(entry);
+        debug!("Creating entry");
+        let entry = Arc::new(ash::Entry::linked());
+        debug!("Creating instance");
+        let instance = DoomApp::create_instance(entry.clone());
 
         let physical_device = DoomApp::pick_physical_device(&instance);
 
         Self {
+            _entry: entry,
             instance,
             physical_device,
         }
     }
 
-    fn create_instance(entry: ash::Entry) -> ash::Instance {
+    fn create_instance(entry: Arc<ash::Entry>) -> ash::Instance {
         let app_info = vk::ApplicationInfo::builder()
             .api_version(vk::make_api_version(0, 1, 0, 0))
             .build();
+
+        let reqs = required_extension_names();
+
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
-            .enabled_extension_names(&required_extension_names())
+            .enabled_extension_names(&reqs)
             .build();
         unsafe {entry.create_instance(&create_info, None).unwrap()}
     }

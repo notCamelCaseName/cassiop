@@ -5,3 +5,6 @@ main: src/*
 
 run: main shaders/*
 	cargo run
+
+debug: main shaders/*
+	RUST_LOG=debug cargo run
