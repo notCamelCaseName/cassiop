@@ -4,10 +4,10 @@ use std::sync::Arc;
 use log::{debug, info};
 
 use ash::vk;
-use winit::event::{Event, VirtualKeyCode, ElementState, KeyboardInput, WindowEvent};
+use winit::event::{Event, VirtualKeyCode, ElementState, WindowEvent};
 use winit::event_loop::{EventLoop, ControlFlow};
 
-const WINDOW_TITLE: &'static str = "DoomApp";
+const WINDOW_TITLE: &str = "DoomApp";
 const WINDOW_WIDTH: u32 = 800;
 const WINDOW_HEIGHT: u32 = 600;
 
@@ -80,29 +80,22 @@ impl DoomApp {
 
         event_loop.run(move |event, _, control_flow| {
 
-            match event {
-                | Event::WindowEvent { event, .. } => {
-                    match event {
-                        | WindowEvent::CloseRequested => {
-                            *control_flow = ControlFlow::Exit
-                        },
-                        | WindowEvent::KeyboardInput { input, .. } => {
-                            match input {
-                                | KeyboardInput { virtual_keycode, state, .. } => {
-                                    match (virtual_keycode, state) {
-                                        | (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
-                                            dbg!();
-                                            *control_flow = ControlFlow::Exit
-                                        },
-                                        | _ => {},
-                                    }
-                                },
-                            }
-                        },
-                        | _ => {},
-                    }
-                },
-                _ => (),
+            if let Event::WindowEvent { event, .. } = event {
+                match event {
+                    WindowEvent::CloseRequested => {
+                        *control_flow = ControlFlow::Exit
+                    },
+                    WindowEvent::KeyboardInput { input, .. } => {
+                        match (input.virtual_keycode, input.state) {
+                            (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
+                                dbg!();
+                                *control_flow = ControlFlow::Exit
+                            },
+                            _ => (),
+                        }
+                    },
+                    _ => (),
+                }
             }
 
         })
