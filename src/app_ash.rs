@@ -1,6 +1,10 @@
 use crate::utility::required_extension_names;
+use crate::debug::{check_validation_layer_support, get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS};
+
+use std::ffi::CStr;
 use std::sync::Arc;
 
+use ash::extensions::ext::DebugUtils;
 use log::{debug, info};
 
 use ash::vk;
@@ -15,6 +19,7 @@ pub struct DoomApp {
     _entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
+    debug_report_callback: Option<(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>
 }
 
 impl DoomApp {
@@ -25,11 +30,13 @@ impl DoomApp {
         let instance = DoomApp::create_instance(entry.clone());
 
         let physical_device = DoomApp::pick_physical_device(&instance);
+        let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
         Self {
             _entry: entry,
             instance,
             physical_device,
+            debug_report_callback
         }
     }
 
@@ -38,7 +45,10 @@ impl DoomApp {
             .api_version(vk::make_api_version(0, 1, 0, 0))
             .build();
 
-        let reqs = required_extension_names();
+        let mut reqs = required_extension_names();
+        if ENABLE_VALIDATION_LAYERS {
+            reqs.push(DebugUtils::name().as_ptr());
+        }
 
         let flags = if 
             cfg!(target_os = "macos")
@@ -49,23 +59,48 @@ impl DoomApp {
             vk::InstanceCreateFlags::empty()
         };
 
-        let create_info = vk::InstanceCreateInfo::builder()
+        let mut create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .flags(flags)
-            .enabled_extension_names(&reqs)
-            .build();
+            .enabled_extension_names(&reqs);
 
-        unsafe {entry.create_instance(&create_info, None).unwrap()}
+        let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
+
+        if ENABLE_VALIDATION_LAYERS {
+            check_validation_layer_support(&entry);
+            create_info = create_info.enabled_layer_names(&layer_names_ptrs);
+        }
+
+        unsafe {entry.create_instance(&create_info.build(), None).unwrap()}
     }
 
     fn pick_physical_device(instance: &ash::Instance) -> vk::PhysicalDevice {
-        unsafe {
-            instance.enumerate_physical_devices()
-                .unwrap()
-                .get(0)
-                .unwrap()
-                .to_owned()
-        }
+        let devices = unsafe { instance.enumerate_physical_devices().unwrap() };
+        let device = devices
+            .into_iter()
+            .find(|device| Self::is_device_suitable(instance, *device))
+            .expect("No suitable physical device.");
+
+        let props = unsafe { instance.get_physical_device_properties(device) };
+        log::debug!("Selected physical device: {:?}", unsafe {
+            CStr::from_ptr(props.device_name.as_ptr())
+        });
+        device
+    }
+
+    fn is_device_suitable(instance: &ash::Instance, device: vk::PhysicalDevice) -> bool {
+        Self::find_queue_families(instance, device).is_some()
+    }
+
+    fn find_queue_families(instance: &ash::Instance, device: vk::PhysicalDevice) -> Option<usize> {
+        let props = unsafe { instance.get_physical_device_queue_family_properties(device) };
+        props
+            .iter()
+            .enumerate()
+            .find(|(_, family)| {
+                family.queue_count > 0 && family.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+            })
+            .map(|(index, _)| index)
     }
 
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
@@ -112,6 +147,9 @@ impl DoomApp {
 impl Drop for DoomApp {
     fn drop(&mut self) {
         unsafe {
+            if let Some((utils, messenger)) = self.debug_report_callback.take() {
+                utils.destroy_debug_utils_messenger(messenger, None);
+            }
             self.instance.destroy_instance(None);
         }
     }

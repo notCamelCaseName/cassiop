@@ -7,7 +7,6 @@ use ash::extensions::ext::MetalSurface;
 #[cfg(target_os = "macos")]
 use ash::extensions::khr::GetPhysicalDeviceProperties2;
 
-use ash::extensions::ext::DebugUtils;
 use ash::extensions::khr::Surface;
 
 #[cfg(target_os = "macos")]
@@ -18,8 +17,7 @@ pub fn required_extension_names() -> Vec<*const i8> {
         Surface::name().as_ptr(),
         MetalSurface::name().as_ptr(),
         GetPhysicalDeviceProperties2::name().as_ptr(),
-        vk::KhrPortabilityEnumerationFn::name().as_ptr(),
-        DebugUtils::name().as_ptr(),
+        vk::KhrPortabilityEnumerationFn::name().as_ptr()
     ]
 }
 
@@ -27,8 +25,7 @@ pub fn required_extension_names() -> Vec<*const i8> {
 pub fn required_extension_names() -> Vec<*const i8> {
     vec![
         Surface::name().as_ptr(),
-        Win32Surface::name().as_ptr(),
-        DebugUtils::name().as_ptr(),
+        Win32Surface::name().as_ptr()
     ]
 }
 
@@ -36,8 +33,7 @@ pub fn required_extension_names() -> Vec<*const i8> {
 pub fn required_extension_names() -> Vec<*const i8> {
     vec![
         Surface::name().as_ptr(),
-        XlibSurface::name().as_ptr(),
-        DebugUtils::name().as_ptr(),
+        XlibSurface::name().as_ptr()
     ]
 }
 

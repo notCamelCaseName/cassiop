@@ -1,4 +1,5 @@
 mod utility;
+mod debug;
 mod app_ash;
 
 use log::info;
