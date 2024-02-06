@@ -7,7 +7,7 @@ use std::os::raw::c_void;
 // https://github.com/adrien-ben/vulkan-tutorial-rs
 
 pub const ENABLE_VALIDATION_LAYERS: bool = true;
-pub const REQUIRED_LAYERS: [&'static str; 1] = ["VK_LAYER_LUNARG_standard_validation"];
+pub const REQUIRED_LAYERS: [&'static str; 1] = ["VK_LAYER_KHRONOS_validation"];
 
 unsafe extern "system" fn vulkan_debug_callback(
     flag: vk::DebugUtilsMessageSeverityFlagsEXT,
@@ -36,9 +36,11 @@ pub fn setup_debug_messenger(
     }
 
     let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
-        .flags(DebugUtilsMessengerCreateFlagsEXT::from_raw(u32::MAX))
-        .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::from_raw(u32::MAX))
-        .message_type(vk::DebugUtilsMessageTypeFlagsEXT::from_raw(u32::MAX))
+        .flags(DebugUtilsMessengerCreateFlagsEXT::empty())
+        .message_type(vk::DebugUtilsMessageTypeFlagsEXT::DEVICE_ADDRESS_BINDING | vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
+            | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION)
+        .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING 
+            | vk::DebugUtilsMessageSeverityFlagsEXT::INFO | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE)
         .pfn_user_callback(Some(vulkan_debug_callback));
     let debug_utils: DebugUtils = DebugUtils::new(entry, instance);
     let debug_utils_messenger = unsafe {
