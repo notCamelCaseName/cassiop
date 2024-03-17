@@ -1,7 +1,7 @@
-use crate::utility::required_extension_names;
+use crate::utility::{required_extension_names, self};
 use std::sync::Arc;
 
-use log::{debug, info};
+use log::*;
 
 use ash::vk;
 use winit::event::{Event, VirtualKeyCode, ElementState, WindowEvent};
@@ -23,8 +23,11 @@ impl DoomApp {
         let entry = Arc::new(ash::Entry::linked());
         debug!("Creating instance");
         let instance = DoomApp::create_instance(entry.clone());
-
         let physical_device = DoomApp::pick_physical_device(&instance);
+        let physical_device_properties = unsafe {instance.get_physical_device_properties(physical_device)};
+        info!("Using device : {}", utility::mnt_to_string(&physical_device_properties.device_name));
+        debug!("Creating logical device");
+        DoomApp::create_logical_device(&instance, &physical_device);
 
         Self {
             _entry: entry,
@@ -40,7 +43,7 @@ impl DoomApp {
 
         let reqs = required_extension_names();
 
-        let flags = if 
+        let flags = if
             cfg!(target_os = "macos")
         {
             info!("Enabling extensions for macOS portability.");
@@ -62,10 +65,46 @@ impl DoomApp {
         unsafe {
             instance.enumerate_physical_devices()
                 .unwrap()
-                .get(0)
+                .iter()
+                .map(|dev| {
+                    trace!(
+                        "Found physical device : {}",
+                        utility::mnt_to_string(&instance.get_physical_device_properties(*dev).device_name)
+                    );
+                    dev
+                })
+                .next()
                 .unwrap()
                 .to_owned()
         }
+    }
+
+    fn create_logical_device(instance: &ash::Instance, physical_device: &vk::PhysicalDevice) -> (vk::Queue, ash::Device) {
+        let index = unsafe {
+            // Get indices of queue families that can do graphics
+            instance.get_physical_device_queue_family_properties(*physical_device)
+                .iter().enumerate()
+                .filter_map(|(i, property)| {
+                    if property.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                        Some(i)
+                    } else {None}
+                })
+                .next().unwrap()
+        };
+
+        let queue_create_info = vk::DeviceQueueCreateInfo::builder()
+            .queue_family_index(index as u32)
+            .queue_priorities(&[1.])
+            .build();
+
+        let create_info = vk::DeviceCreateInfo::builder()
+            .queue_create_infos(&[queue_create_info])
+            .build();
+
+        let device = unsafe {instance.create_device(*physical_device, &create_info, None).unwrap()};
+        let queue = unsafe {device.get_device_queue(index as u32, 0)};
+
+        (queue, device)
     }
 
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
@@ -76,7 +115,7 @@ impl DoomApp {
             .expect("Couldn't create window.")
     }
 
-    pub fn main_loop(event_loop: EventLoop<()>) {
+    pub fn main_loop(event_loop: EventLoop<()>) -> ! {
 
         event_loop.run(move |event, _, control_flow| {
 
