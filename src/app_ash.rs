@@ -5,11 +5,10 @@ use log::*;
 
 use ash::vk;
 use ash_window;
+use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
 use winit::event::{Event, ElementState, WindowEvent};
 use winit::event_loop::EventLoop;
 use winit::keyboard::{Key, NamedKey};
-use winit::raw_window_handle::{HasWindowHandle, HasDisplayHandle};
-use raw_window_handle;
 
 const WINDOW_TITLE: &str = "DoomApp";
 const WINDOW_WIDTH: u32 = 800;
@@ -38,7 +37,7 @@ impl DoomApp {
         debug!("Creating logical device");
         let (queue, logical_device) = DoomApp::create_logical_device(&instance, &physical_device);
         debug!("Creating surface");
-        let surface = DoomApp::create_surface(&instance, &window);
+        let surface = DoomApp::create_surface(&entry, &instance, &window);
 
         Self {
             _entry: entry,
@@ -121,14 +120,16 @@ impl DoomApp {
         (queue, device)
     }
 
-    #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
-    fn create_surface(instance: &ash::Instance, window: &winit::window::Window) -> vk::SurfaceKHR {
-        todo!()
-    }
-
-    #[cfg(target_os = "macos")]
-    fn create_surface(instance: &ash::Instance, window: &winit::window::Window) -> vk::SurfaceKHR {
-        todo!()
+    fn create_surface(entry: &ash::Entry, instance: &ash::Instance, window: &winit::window::Window) -> vk::SurfaceKHR {
+        unsafe {
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                window.raw_display_handle(),
+                window.raw_window_handle(),
+                None,
+            ).unwrap()
+        }
     }
 
 
