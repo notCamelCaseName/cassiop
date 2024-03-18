@@ -4,8 +4,12 @@ use std::sync::Arc;
 use log::*;
 
 use ash::vk;
-use winit::event::{Event, VirtualKeyCode, ElementState, WindowEvent};
-use winit::event_loop::{EventLoop, ControlFlow};
+use ash_window;
+use winit::event::{Event, ElementState, WindowEvent};
+use winit::event_loop::EventLoop;
+use winit::keyboard::{Key, NamedKey};
+use winit::raw_window_handle::{HasWindowHandle, HasDisplayHandle};
+use raw_window_handle;
 
 const WINDOW_TITLE: &str = "DoomApp";
 const WINDOW_WIDTH: u32 = 800;
@@ -15,24 +19,34 @@ pub struct DoomApp {
     _entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
+    logical_device: ash::Device,
+    queue: vk::Queue,
+    surface: vk::SurfaceKHR,
 }
 
 impl DoomApp {
-    pub fn new() -> Self {
+    pub fn new(window: &winit::window::Window) -> Self {
         debug!("Creating entry");
         let entry = Arc::new(ash::Entry::linked());
+
         debug!("Creating instance");
         let instance = DoomApp::create_instance(entry.clone());
         let physical_device = DoomApp::pick_physical_device(&instance);
+        debug!("Picking physical device");
         let physical_device_properties = unsafe {instance.get_physical_device_properties(physical_device)};
         info!("Using device : {}", utility::mnt_to_string(&physical_device_properties.device_name));
         debug!("Creating logical device");
-        DoomApp::create_logical_device(&instance, &physical_device);
+        let (queue, logical_device) = DoomApp::create_logical_device(&instance, &physical_device);
+        debug!("Creating surface");
+        let surface = DoomApp::create_surface(&instance, &window);
 
         Self {
             _entry: entry,
             instance,
             physical_device,
+            logical_device,
+            queue,
+            surface,
         }
     }
 
@@ -107,28 +121,40 @@ impl DoomApp {
         (queue, device)
     }
 
+    #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
+    fn create_surface(instance: &ash::Instance, window: &winit::window::Window) -> vk::SurfaceKHR {
+        todo!()
+    }
+
+    #[cfg(target_os = "macos")]
+    fn create_surface(instance: &ash::Instance, window: &winit::window::Window) -> vk::SurfaceKHR {
+        todo!()
+    }
+
+
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
-        winit::window::WindowBuilder::new()
+        let window = winit::window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
             .with_inner_size(winit::dpi::LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
             .build(event_loop)
-            .expect("Couldn't create window.")
+            .expect("Couldn't create window.");
+
+        window
     }
 
-    pub fn main_loop(event_loop: EventLoop<()>) -> ! {
+    pub fn main_loop(self, event_loop: EventLoop<()>) {
 
-        event_loop.run(move |event, _, control_flow| {
+        event_loop.run(move |event, elwt| {
 
             if let Event::WindowEvent { event, .. } = event {
                 match event {
                     WindowEvent::CloseRequested => {
-                        *control_flow = ControlFlow::Exit
+                        elwt.exit();
                     },
-                    WindowEvent::KeyboardInput { input, .. } => {
-                        match (input.virtual_keycode, input.state) {
-                            (Some(VirtualKeyCode::Escape), ElementState::Pressed) => {
-                                dbg!();
-                                *control_flow = ControlFlow::Exit
+                    WindowEvent::KeyboardInput { event: input, .. } => {
+                        match (input.logical_key, input.state) {
+                            (Key::Named(NamedKey::Escape), ElementState::Pressed) => {
+                                elwt.exit();
                             },
                             _ => (),
                         }
@@ -137,15 +163,9 @@ impl DoomApp {
                 }
             }
 
-        })
+        }).unwrap()
     }
 
-    pub fn run(self) {
-        let event_loop = EventLoop::new();
-        let _window = DoomApp::init_window(&event_loop);
-
-        DoomApp::main_loop(event_loop);
-    }
 }
 
 impl Drop for DoomApp {
