@@ -37,7 +37,16 @@ impl DoomApp {
         debug!("Creating logical device");
         let (queue, logical_device) = DoomApp::create_logical_device(&instance, &physical_device);
         debug!("Creating surface");
-        let surface = DoomApp::create_surface(&entry, &instance, &window);
+        let surface = unsafe {
+            ash_window::create_surface(
+                &entry,
+                &instance,
+                window.raw_display_handle(),
+                window.raw_window_handle(),
+                None,
+            ).unwrap()
+        };
+
 
         Self {
             _entry: entry,
@@ -119,19 +128,6 @@ impl DoomApp {
 
         (queue, device)
     }
-
-    fn create_surface(entry: &ash::Entry, instance: &ash::Instance, window: &winit::window::Window) -> vk::SurfaceKHR {
-        unsafe {
-            ash_window::create_surface(
-                &entry,
-                &instance,
-                window.raw_display_handle(),
-                window.raw_window_handle(),
-                None,
-            ).unwrap()
-        }
-    }
-
 
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
         let window = winit::window::WindowBuilder::new()
