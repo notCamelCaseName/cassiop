@@ -1,4 +1,5 @@
 use crate::utility::{required_extension_names, self};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use log::*;
@@ -107,7 +108,8 @@ impl DoomApp {
             instance.get_physical_device_queue_family_properties(*physical_device)
                 .iter().enumerate()
                 .filter_map(|(i, property)| {
-                    if property.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+                    if property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                        && Self::check_device_extension_support(instance, physical_device) {
                         Some(i)
                     } else {None}
                 })
@@ -127,6 +129,21 @@ impl DoomApp {
         let queue = unsafe {device.get_device_queue(index as u32, 0)};
 
         (queue, device)
+    }
+
+    fn check_device_extension_support(instance: &ash::Instance, device: &vk::PhysicalDevice) -> bool {
+        let extensions: HashSet<_> = unsafe {
+            instance
+                .enumerate_device_extension_properties(*device)
+                .unwrap()
+                .iter()
+                .map(|e| e.extension_name.as_ptr())
+                .collect()
+        };
+        if required_extension_names().iter().all(|e| extensions.contains(e)) {
+            return true
+        }
+        false
     }
 
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {

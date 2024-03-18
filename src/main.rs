@@ -3,7 +3,7 @@ mod app_ash;
 
 use log::info;
 
-use winit::{event, event_loop::EventLoop};
+use winit::event_loop::EventLoop;
 
 fn main() {
     env_logger::init();
