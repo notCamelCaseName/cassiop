@@ -1,4 +1,4 @@
-use crate::utility::{required_extension_names, self};
+use crate::utility::{self, required_device_extension_names, required_instance_extension_names};
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -64,7 +64,7 @@ impl DoomApp {
             .api_version(vk::make_api_version(0, 1, 0, 0))
             .build();
 
-        let reqs = required_extension_names();
+        let reqs = required_instance_extension_names();
 
         let flags = if
             cfg!(target_os = "macos")
@@ -137,13 +137,12 @@ impl DoomApp {
                 .enumerate_device_extension_properties(*device)
                 .unwrap()
                 .iter()
-                .map(|e| e.extension_name.as_ptr())
+                .map(|e| String::from_utf8_unchecked(e.extension_name.iter()
+                        .map(|i| *i as u8)
+                        .collect()))
                 .collect()
         };
-        if required_extension_names().iter().all(|e| extensions.contains(e)) {
-            return true
-        }
-        false
+        required_device_extension_names().iter().all(|e| extensions.contains(e))
     }
 
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {

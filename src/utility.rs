@@ -22,6 +22,11 @@ pub fn required_extension_names() -> Vec<*const i8> {
         GetPhysicalDeviceProperties2::name().as_ptr(),
         vk::KhrPortabilityEnumerationFn::name().as_ptr(),
         DebugUtils::name().as_ptr(),
+    ]
+}
+#[cfg(target_os = "macos")]
+pub fn required_device_extension_names() -> Vec<*const i8> {
+    vec![
         Swapchain::name().as_ptr(),
     ]
 }
@@ -32,18 +37,28 @@ pub fn required_extension_names() -> Vec<*const i8> {
         Surface::name().as_ptr(),
         Win32Surface::name().as_ptr(),
         DebugUtils::name().as_ptr(),
+    ]
+}
+#[cfg(all(windows))]
+pub fn required_device_extension_names() -> Vec<*const i8> {
+    vec![
         Swapchain::name().as_ptr(),
     ]
 }
 
 #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
-pub fn required_extension_names() -> Vec<*const i8> {
+pub fn required_instance_extension_names() -> Vec<*const i8> {
     vec![
         Surface::name().as_ptr(),
         XlibSurface::name().as_ptr(),
         WaylandSurface::name().as_ptr(),
         DebugUtils::name().as_ptr(),
-        Swapchain::name().as_ptr(),
+    ]
+}
+#[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
+pub fn required_device_extension_names() -> Vec<String> {
+    vec![
+        String::from(Swapchain::name().to_str().unwrap()),
     ]
 }
 
