@@ -25,9 +25,9 @@ pub fn required_extension_names() -> Vec<*const i8> {
     ]
 }
 #[cfg(target_os = "macos")]
-pub fn required_device_extension_names() -> Vec<*const i8> {
+pub fn required_device_extension_names() -> Vec<String> {
     vec![
-        Swapchain::name().as_ptr(),
+        String::from(Swapchain::name().to_str().unwrap()),
     ]
 }
 
@@ -40,9 +40,9 @@ pub fn required_extension_names() -> Vec<*const i8> {
     ]
 }
 #[cfg(all(windows))]
-pub fn required_device_extension_names() -> Vec<*const i8> {
+pub fn required_device_extension_names() -> Vec<String> {
     vec![
-        Swapchain::name().as_ptr(),
+        String::from(Swapchain::name().to_str().unwrap()),
     ]
 }
 
