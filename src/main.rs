@@ -1,9 +1,10 @@
 mod utility;
 mod app_ash;
 
-use log::info;
-
-use winit::event_loop::EventLoop;
+use {
+    log::info,
+    winit::event_loop::EventLoop,
+};
 
 fn main() {
     env_logger::init();

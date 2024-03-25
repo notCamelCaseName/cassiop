@@ -1,16 +1,20 @@
-use crate::utility::{self, required_device_extension_names, required_instance_extension_names};
-use std::collections::HashSet;
-use std::sync::Arc;
-use std::ffi::CStr;
-
-use log::*;
-
-use ash::vk;
-use ash_window;
-use raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle};
-use winit::event::{Event, ElementState, WindowEvent};
-use winit::event_loop::EventLoop;
-use winit::keyboard::{Key, NamedKey};
+use {
+    crate::utility::{self, required_device_extension_names, required_instance_extension_names},
+    ash::vk,
+    ash_window,
+    raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle},
+    winit::{
+        event::{Event, ElementState, WindowEvent},
+        event_loop::EventLoop,
+        keyboard::{Key, NamedKey},
+    },
+    std::{
+        collections::HashSet,
+        sync::Arc,
+        ffi::CStr,
+    },
+    log::*,
+};
 
 const WINDOW_TITLE: &str = "DoomApp";
 const WINDOW_WIDTH: u32 = 800;

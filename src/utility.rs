@@ -1,16 +1,16 @@
 #[cfg(target_os = "windows")]
 use ash::extensions::khr::Win32Surface;
 #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
-use ash::extensions::khr::XlibSurface;
-use ash::extensions::khr::WaylandSurface;
+use ash::extensions::khr::{XlibSurface, WaylandSurface};
 #[cfg(target_os = "macos")]
 use ash::extensions::ext::MetalSurface;
 #[cfg(target_os = "macos")]
 use ash::extensions::khr::GetPhysicalDeviceProperties2;
 
-use ash::extensions::ext::DebugUtils;
-use ash::extensions::khr::Surface;
-use ash::extensions::khr::Swapchain;
+use ash::extensions::{
+    ext::DebugUtils,
+    khr::{Surface, Swapchain}
+};
 
 #[cfg(target_os = "macos")]
 pub fn required_extension_names() -> Vec<*const i8> {
