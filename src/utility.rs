@@ -1,65 +1,18 @@
-#[cfg(target_os = "windows")]
-use ash::extensions::khr::Win32Surface;
-#[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
-use ash::extensions::khr::{XlibSurface, WaylandSurface};
-#[cfg(target_os = "macos")]
-use ash::extensions::ext::MetalSurface;
-#[cfg(target_os = "macos")]
-use ash::extensions::khr::GetPhysicalDeviceProperties2;
+use ash::extensions::khr::Swapchain;
 
-use ash::extensions::{
-    ext::DebugUtils,
-    khr::{Surface, Swapchain}
-};
-
-#[cfg(target_os = "macos")]
-pub fn required_extension_names() -> Vec<*const i8> {
-    use ash::vk;
-
-    vec![
-        Surface::name().as_ptr(),
-        MetalSurface::name().as_ptr(),
-        GetPhysicalDeviceProperties2::name().as_ptr(),
-        vk::KhrPortabilityEnumerationFn::name().as_ptr(),
-        DebugUtils::name().as_ptr(),
-    ]
-}
 #[cfg(target_os = "macos")]
 pub fn required_device_extension_names() -> Vec<String> {
-    vec![
-        String::from(Swapchain::name().to_str().unwrap()),
-    ]
+    vec![String::from(Swapchain::name().to_str().unwrap())]
 }
 
 #[cfg(all(windows))]
-pub fn required_extension_names() -> Vec<*const i8> {
-    vec![
-        Surface::name().as_ptr(),
-        Win32Surface::name().as_ptr(),
-        DebugUtils::name().as_ptr(),
-    ]
-}
-#[cfg(all(windows))]
 pub fn required_device_extension_names() -> Vec<String> {
-    vec![
-        String::from(Swapchain::name().to_str().unwrap()),
-    ]
+    vec![String::from(Swapchain::name().to_str().unwrap())]
 }
 
 #[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
-pub fn required_instance_extension_names() -> Vec<*const i8> {
-    vec![
-        Surface::name().as_ptr(),
-        XlibSurface::name().as_ptr(),
-        WaylandSurface::name().as_ptr(),
-        DebugUtils::name().as_ptr(),
-    ]
-}
-#[cfg(all(unix, not(target_os = "android"), not(target_os = "macos")))]
 pub fn required_device_extension_names() -> Vec<String> {
-    vec![
-        String::from(Swapchain::name().to_str().unwrap()),
-    ]
+    vec![String::from(Swapchain::name().to_str().unwrap())]
 }
 
 pub fn mnt_to_string(bytes: &[i8]) -> String {
