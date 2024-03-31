@@ -1,7 +1,7 @@
 use {
     anyhow::{anyhow, Result},
     ash::{
-        extensions::khr::{Surface, Swapchain},
+        extensions::khr::Surface,
         vk,
     },
     log::info,
@@ -16,19 +16,19 @@ pub struct SurfaceInfo {
 }
 
 impl SurfaceInfo {
-    pub fn new(
-        surface_ext: &Surface,
+    pub fn get_surface_info(
+        surface_loader: &Surface,
         physical_device: &vk::PhysicalDevice,
         surface: &vk::SurfaceKHR,
     ) -> Result<Self> {
         let present_modes = unsafe {
-            (*surface_ext).get_physical_device_surface_present_modes(*physical_device, *surface)
+            surface_loader.get_physical_device_surface_present_modes(*physical_device, *surface)
         }?;
         let surface_capabilities = unsafe {
-            (*surface_ext).get_physical_device_surface_capabilities(*physical_device, *surface)
+            surface_loader.get_physical_device_surface_capabilities(*physical_device, *surface)
         }?;
         let surface_formats = unsafe {
-            (*surface_ext).get_physical_device_surface_formats(*physical_device, *surface)
+            surface_loader.get_physical_device_surface_formats(*physical_device, *surface)
         }?;
         Ok(SurfaceInfo {
             present_modes,

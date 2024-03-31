@@ -47,10 +47,10 @@ pub struct DoomApp {
     logical_device: ash::Device,
     queues: Queues,
     queue_family_indices: QueueFamilyIndices,
-    surface_ext: Surface,
+    surface_loader: Surface,
     surface: vk::SurfaceKHR,
     surface_info: SurfaceInfo,
-    swapchain_ext: Swapchain,
+    swapchain_loader: Swapchain,
     swapchain: vk::SwapchainKHR,
 }
 
@@ -71,7 +71,7 @@ impl DoomApp {
         );
         debug!("Creating logical device");
 
-        let surface_ext = Surface::new(&entry, &instance);
+        let surface_loader = Surface::new(&entry, &instance);
         let surface = unsafe {
             ash_window::create_surface(
                 &entry,
@@ -81,15 +81,15 @@ impl DoomApp {
                 None,
             )?
         };
-        let surface_info = SurfaceInfo::new(&surface_ext, &physical_device, &surface)?;
+        let surface_info = SurfaceInfo::get_surface_info(&surface_loader, &physical_device, &surface)?;
 
-        let queue_family_indices = DoomApp::get_queue_family_indices(&physical_device, &instance, &surface_ext, &surface).expect("No queue family indices found");
+        let queue_family_indices = DoomApp::get_queue_family_indices(&physical_device, &instance, &surface_loader, &surface).expect("No queue family indices found");
 
         let (queues, logical_device) = DoomApp::create_logical_device(&instance, &queue_family_indices, &physical_device);
         debug!("Creating surface");
 
-        let swapchain_ext = Swapchain::new(&instance, &logical_device);
-        let swapchain = DoomApp::create_swapchain(&swapchain_ext, &surface, &surface_info, &queue_family_indices, &window)?;
+        let swapchain_loader = Swapchain::new(&instance, &logical_device);
+        let swapchain = DoomApp::create_swapchain(&swapchain_loader, &surface, &surface_info, &queue_family_indices, &window)?;
 
         Ok(Self {
             _entry: entry,
@@ -99,10 +99,10 @@ impl DoomApp {
             queues,
             queue_family_indices,
             surface,
-            surface_ext,
+            surface_loader,
             surface_info,
             swapchain,
-            swapchain_ext,
+            swapchain_loader,
         })
     }
 
@@ -178,7 +178,7 @@ impl DoomApp {
     fn get_queue_family_indices(
         device: &vk::PhysicalDevice,
         instance: &ash::Instance,
-        surface_ext: &Surface,
+        surface_loader: &Surface,
         surface: &vk::SurfaceKHR
     ) -> Option<QueueFamilyIndices> {
         let queue_family_properties = unsafe {
@@ -196,7 +196,7 @@ impl DoomApp {
                 }
 
                 if let Ok(surface_supported) = unsafe {
-                    surface_ext.get_physical_device_surface_support(*device, i as u32, *surface)
+                    surface_loader.get_physical_device_surface_support(*device, i as u32, *surface)
                 } {
                     if surface_supported && DoomApp::check_device_extension_support(&instance, &device) {
                         queue_family_indices.presentation_family = Some(i as u32);
@@ -273,7 +273,7 @@ impl DoomApp {
     }
 
     fn create_swapchain(
-        swapchain_ext: &Swapchain,
+        swapchain_loader: &Swapchain,
         surface: &vk::SurfaceKHR,
         surface_info: &SurfaceInfo,
         queue_family_indices: &QueueFamilyIndices,
@@ -323,7 +323,7 @@ impl DoomApp {
         };
 
         unsafe {
-            swapchain_ext
+            swapchain_loader
                 .create_swapchain(&create_info, None)
                 .context("Error while creating swapchain.")
         }
@@ -366,9 +366,9 @@ impl DoomApp {
 impl Drop for DoomApp {
     fn drop(&mut self) {
         unsafe {
-            self.swapchain_ext.destroy_swapchain(self.swapchain, None);
+            self.swapchain_loader.destroy_swapchain(self.swapchain, None);
             self.logical_device.destroy_device(None);
-            self.surface_ext.destroy_surface(self.surface, None);
+            self.surface_loader.destroy_surface(self.surface, None);
             self.instance.destroy_instance(None);
         }
     }
