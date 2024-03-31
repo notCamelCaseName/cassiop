@@ -8,10 +8,15 @@ use {
         extensions::khr::{Surface, Swapchain},
         vk,
     },
-    ash_window::{self, enumerate_required_extensions},
+    ash_window::{self},
     log::*,
     raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle},
-    std::{cmp, collections::HashSet, ffi::CStr, sync::Arc},
+    std::{
+        cmp,
+        collections::HashSet,
+        ffi::CStr,
+        sync::Arc
+    },
     winit::{
         event::{ElementState, Event, WindowEvent},
         event_loop::EventLoop,
@@ -40,6 +45,11 @@ impl QueueFamilyIndices {
     }
 }
 
+struct SwapchainImage {
+    image: vk::Image,
+    image_view: vk::ImageView
+}
+
 pub struct DoomApp {
     _entry: Arc<ash::Entry>,
     instance: ash::Instance,
@@ -52,6 +62,7 @@ pub struct DoomApp {
     surface_info: SurfaceInfo,
     swapchain_loader: Swapchain,
     swapchain: vk::SwapchainKHR,
+    swapchain_images: Vec<SwapchainImage>,
 }
 
 impl DoomApp {
@@ -91,6 +102,8 @@ impl DoomApp {
         let swapchain_loader = Swapchain::new(&instance, &logical_device);
         let swapchain = DoomApp::create_swapchain(&swapchain_loader, &surface, &surface_info, &queue_family_indices, &window)?;
 
+        let swapchain_images = DoomApp::get_swapchain_images(&swapchain_loader, &swapchain, &surface_info.choose_best_color_format()?.format, &logical_device)?;
+
         Ok(Self {
             _entry: entry,
             instance,
@@ -103,6 +116,7 @@ impl DoomApp {
             surface_info,
             swapchain,
             swapchain_loader,
+            swapchain_images,
         })
     }
 
@@ -113,7 +127,7 @@ impl DoomApp {
             .api_version(vk::make_api_version(0, 1, 0, 0));
 
         let raw_display_handle = window.raw_display_handle();
-        let reqs = enumerate_required_extensions(raw_display_handle)?;
+        let reqs = ash_window::enumerate_required_extensions(raw_display_handle)?;
         unsafe { Self::validate_required_extensions(reqs, entry.clone())? };
 
         let flags = if cfg!(target_os = "macos") {
@@ -330,6 +344,55 @@ impl DoomApp {
         }
     }
 
+    fn create_image_view(
+        image: &vk::Image,
+        format: &vk::Format,
+        img_aspect_flags: vk::ImageAspectFlags,
+        device: &ash::Device,
+    ) -> Result<vk::ImageView> {
+        let component_mapping_builder = vk::ComponentMapping::builder()
+            .r(vk::ComponentSwizzle::IDENTITY)
+            .g(vk::ComponentSwizzle::IDENTITY)
+            .b(vk::ComponentSwizzle::IDENTITY)
+            .a(vk::ComponentSwizzle::IDENTITY);
+        let img_subresource_range_builder = vk::ImageSubresourceRange::builder()
+            .aspect_mask(img_aspect_flags)
+            .base_mip_level(0)
+            .level_count(1)
+            .base_array_layer(0)
+            .layer_count(1);
+
+        let create_info = vk::ImageViewCreateInfo::builder()
+            .image(*image)
+            .view_type(vk::ImageViewType::TYPE_2D)
+            .format(*format)
+            .components(*component_mapping_builder)
+            .subresource_range(*img_subresource_range_builder);
+
+        unsafe {
+            device.create_image_view(&create_info, None)
+        }.context("Error occured while trying to create image view")
+    }
+
+    fn get_swapchain_images(
+        swapchain_loader: &Swapchain,
+        swapchain: &vk::SwapchainKHR,
+        format: &vk::Format,
+        device: &ash::Device,
+    ) -> Result<Vec<SwapchainImage>> {
+        let swapchain_images = unsafe {
+            swapchain_loader.get_swapchain_images(*swapchain)?
+        };
+        let swapchain_images_output = swapchain_images
+            .iter()
+            .map(|&image| {
+                let image_view = DoomApp::create_image_view(&image, format, vk::ImageAspectFlags::COLOR, device)?;
+                Ok::<SwapchainImage, anyhow::Error>(SwapchainImage {image, image_view})
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(swapchain_images_output)
+    }
+
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
         let window = winit::window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
@@ -367,6 +430,7 @@ impl DoomApp {
 impl Drop for DoomApp {
     fn drop(&mut self) {
         unsafe {
+            self.swapchain_images.iter().for_each(|img| self.logical_device.destroy_image_view(img.image_view, None));
             self.swapchain_loader.destroy_swapchain(self.swapchain, None);
             self.logical_device.destroy_device(None);
             self.surface_loader.destroy_surface(self.surface, None);
