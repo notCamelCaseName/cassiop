@@ -1,17 +1,12 @@
 use {
-    anyhow::{
-        anyhow, Result
-    },
+    anyhow::{anyhow, Result},
     ash::{
-        extensions::khr::{
-            Surface,
-            Swapchain
-        },
+        extensions::khr::{Surface, Swapchain},
         vk,
     },
     log::info,
     std::cmp,
-    winit::window
+    winit::window,
 };
 
 pub struct SurfaceInfo {
@@ -24,7 +19,7 @@ impl SurfaceInfo {
     pub fn new(
         surface_ext: &Surface,
         physical_device: &vk::PhysicalDevice,
-        surface: &vk::SurfaceKHR
+        surface: &vk::SurfaceKHR,
     ) -> Result<Self> {
         let present_modes = unsafe {
             (*surface_ext).get_physical_device_surface_present_modes(*physical_device, *surface)
@@ -47,7 +42,9 @@ impl SurfaceInfo {
         const DESIRED_FORMAT_ALT: vk::Format = vk::Format::B8G8R8A8_UNORM;
         const DESIRED_COLOR_SPACE: vk::ColorSpaceKHR = vk::ColorSpaceKHR::SRGB_NONLINEAR;
 
-        if self.surface_formats.len() == 1 && self.surface_formats[0].format == vk::Format::UNDEFINED {
+        if self.surface_formats.len() == 1
+            && self.surface_formats[0].format == vk::Format::UNDEFINED
+        {
             // UNDEFINED means all formats are supported
             Ok(vk::SurfaceFormatKHR {
                 format: DESIRED_FORMAT,
@@ -67,17 +64,17 @@ impl SurfaceInfo {
 
     pub fn choose_best_pres_mode(&self) -> Result<vk::PresentModeKHR> {
         const DESIRED_MODE: vk::PresentModeKHR = vk::PresentModeKHR::MAILBOX;
-        if self.present_modes.iter().any(|&mode| mode==DESIRED_MODE) {
+        if self.present_modes.iter().any(|&mode| mode == DESIRED_MODE) {
             Ok(DESIRED_MODE)
         } else {
             Ok(vk::PresentModeKHR::FIFO)
-                // FIFO mode cannot be absent according to the Vulkan spec
+            // FIFO mode cannot be absent according to the Vulkan spec
         }
     }
 
     pub fn choose_swapchain_extents(&self, window: &window::Window) -> Result<vk::Extent2D> {
         let current_extent = self.surface_capabilities.current_extent;
-        
+
         if current_extent.width != u32::MAX {
             Ok(current_extent)
         } else {

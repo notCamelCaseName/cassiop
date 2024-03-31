@@ -1,6 +1,6 @@
 mod app_ash;
-mod utility;
 mod surface_info;
+mod utility;
 
 use {anyhow::Result, log::info, winit::event_loop::EventLoop};
 

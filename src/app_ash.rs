@@ -1,12 +1,12 @@
 use {
-    crate::{surface_info::SurfaceInfo, utility::{self, required_device_extension_names}},
-    anyhow::Result,
+    crate::{
+        surface_info::SurfaceInfo,
+        utility::{self, required_device_extension_names},
+    },
+    anyhow::{Context, Result},
     ash::{
-        extensions::khr::{
-            Surface,
-            Swapchain
-        },
-        vk
+        extensions::khr::{Surface, Swapchain},
+        vk,
     },
     ash_window::{self, enumerate_required_extensions},
     log::*,
@@ -33,6 +33,8 @@ pub struct DoomApp {
     surface: vk::SurfaceKHR,
     surface_ext: Surface,
     surface_info: SurfaceInfo,
+    swapchain: vk::SwapchainKHR,
+    swapchain_ext: Swapchain,
 }
 
 impl DoomApp {
@@ -53,6 +55,8 @@ impl DoomApp {
         debug!("Creating logical device");
         let (queue, logical_device) = DoomApp::create_logical_device(&instance, &physical_device);
         debug!("Creating surface");
+
+        let surface_ext = Surface::new(&entry, &instance);
         let surface = unsafe {
             ash_window::create_surface(
                 &entry,
@@ -62,8 +66,10 @@ impl DoomApp {
                 None,
             )?
         };
-        let surface_ext = Surface::new(&entry, &instance);
         let surface_info = SurfaceInfo::new(&surface_ext, &physical_device, &surface)?;
+
+        let swapchain_ext = Swapchain::new(&instance, &logical_device);
+        let swapchain = DoomApp::create_swapchain(&swapchain_ext, &surface, &surface_info, &window)?;
 
         Ok(Self {
             _entry: entry,
@@ -74,6 +80,8 @@ impl DoomApp {
             surface,
             surface_ext,
             surface_info,
+            swapchain,
+            swapchain_ext,
         })
     }
 
@@ -156,12 +164,17 @@ impl DoomApp {
                 .get_physical_device_queue_family_properties(*physical_device)
                 .iter()
                 .enumerate()
-                .find(|(_i, property)| {
-                    property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                .filter_map(|(i, property)| {
+                    if property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                         && Self::check_device_extension_support(instance, physical_device)
+                    {
+                        Some(i as u32)
+                    } else {
+                        None
+                    }
                 })
+                .next()
                 .expect("First device doesn't support graphics queue")
-                .0
         };
 
         let queue_create_info = vk::DeviceQueueCreateInfo::builder()
@@ -205,22 +218,23 @@ impl DoomApp {
             .all(|e| extensions.contains(e))
     }
 
-
     fn create_swapchain(
         swapchain_ext: &Swapchain,
         surface: &vk::SurfaceKHR,
         surface_info: &SurfaceInfo,
-        queue: &vk::Queue, // a QueueFamilyIndices struct seems to be needed
         window: &window::Window,
-        instance: &ash::Instance,
-        device: &vk::PhysicalDevice,
     ) -> Result<vk::SwapchainKHR> {
-        let min_image_count = cmp::min(
-            surface_info.surface_capabilities.max_image_count,
-            surface_info.surface_capabilities.min_image_count + 1
-        );
-        let queue_family_properties = unsafe {
-            instance.get_physical_device_queue_family_properties(*device)
+        let min_image_count = {
+            let max_image_count = surface_info.surface_capabilities.max_image_count;
+
+            if max_image_count > 0 {
+                cmp::min(
+                    max_image_count,
+                    surface_info.surface_capabilities.min_image_count + 1,
+                )
+            } else {
+                surface_info.surface_capabilities.min_image_count
+            }
         };
 
         let current_transform = surface_info.surface_capabilities.current_transform;
@@ -240,23 +254,17 @@ impl DoomApp {
             .present_mode(surface_info.choose_best_pres_mode()?)
             .clipped(true);
 
-        /*
-        let queue_family_indices = [
-            queue_family_indices.graphics_family.unwrap(),
-            queue_family_indices.presentation_family.unwrap(),
-        ];
-        let is_concurrent = queue_family_indices[0] != queue_family_indices[1];
+        let create_info = create_info.image_sharing_mode(vk::SharingMode::EXCLUSIVE);
+        // TODO : case where CONCURRENT mode has to be used
+        // (see https://forgottenmaster.github.io/posts/vulkan/lets-learn-vulkan/swapchain/ ,
+        // requires a cleaner implementation of queue selection and storing queue family indices
+        // in our DoomApp instead of selecting the first one that supports graphics)
 
-        let create_info = if is_concurrent {
-            create_info
-                .image_sharing_mode(vk::SharingMode::CONCURRENT)
-                .queue_family_indices(&queue_family_indices)
-        } else {
-            create_info.image_sharing_mode(vk::SharingMode::EXCLUSIVE)
-        };
-        */
-        todo!()
-
+        unsafe {
+            swapchain_ext
+                .create_swapchain(&create_info, None)
+                .context("Error while creating swapchain.")
+        }
     }
 
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
@@ -296,6 +304,7 @@ impl DoomApp {
 impl Drop for DoomApp {
     fn drop(&mut self) {
         unsafe {
+            self.swapchain_ext.destroy_swapchain(self.swapchain, None);
             self.logical_device.destroy_device(None);
             self.surface_ext.destroy_surface(self.surface, None);
             self.instance.destroy_instance(None);
