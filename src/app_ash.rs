@@ -156,17 +156,12 @@ impl DoomApp {
                 .get_physical_device_queue_family_properties(*physical_device)
                 .iter()
                 .enumerate()
-                .filter_map(|(i, property)| {
-                    if property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
+                .find(|(_i, property)| {
+                    property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
                         && Self::check_device_extension_support(instance, physical_device)
-                    {
-                        Some(i)
-                    } else {
-                        None
-                    }
                 })
-                .next()
                 .expect("First device doesn't support graphics queue")
+                .0
         };
 
         let queue_create_info = vk::DeviceQueueCreateInfo::builder()
