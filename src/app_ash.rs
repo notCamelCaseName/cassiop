@@ -24,17 +24,34 @@ const WINDOW_TITLE: &str = "DoomApp";
 const WINDOW_WIDTH: u32 = 800;
 const WINDOW_HEIGHT: u32 = 600;
 
+struct Queues {
+    graphics_queue: vk::Queue,
+    presentation_queue: vk::Queue
+}
+
+struct QueueFamilyIndices {
+    graphics_family: Option<u32>,
+    presentation_family: Option<u32>
+}
+
+impl QueueFamilyIndices {
+    fn is_complete(&self) -> bool {
+        self.graphics_family.is_some() && self.presentation_family.is_some()
+    }
+}
+
 pub struct DoomApp {
     _entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
     logical_device: ash::Device,
-    queue: vk::Queue,
-    surface: vk::SurfaceKHR,
+    queues: Queues,
+    queue_family_indices: QueueFamilyIndices,
     surface_ext: Surface,
+    surface: vk::SurfaceKHR,
     surface_info: SurfaceInfo,
-    swapchain: vk::SwapchainKHR,
     swapchain_ext: Swapchain,
+    swapchain: vk::SwapchainKHR,
 }
 
 impl DoomApp {
@@ -53,8 +70,6 @@ impl DoomApp {
             utility::mnt_to_string(&physical_device_properties.device_name)
         );
         debug!("Creating logical device");
-        let (queue, logical_device) = DoomApp::create_logical_device(&instance, &physical_device);
-        debug!("Creating surface");
 
         let surface_ext = Surface::new(&entry, &instance);
         let surface = unsafe {
@@ -68,15 +83,21 @@ impl DoomApp {
         };
         let surface_info = SurfaceInfo::new(&surface_ext, &physical_device, &surface)?;
 
+        let queue_family_indices = DoomApp::get_queue_family_indices(&physical_device, &instance, &surface_ext, &surface).expect("No queue family indices found");
+
+        let (queues, logical_device) = DoomApp::create_logical_device(&instance, &queue_family_indices, &physical_device);
+        debug!("Creating surface");
+
         let swapchain_ext = Swapchain::new(&instance, &logical_device);
-        let swapchain = DoomApp::create_swapchain(&swapchain_ext, &surface, &surface_info, &window)?;
+        let swapchain = DoomApp::create_swapchain(&swapchain_ext, &surface, &surface_info, &queue_family_indices, &window)?;
 
         Ok(Self {
             _entry: entry,
             instance,
             physical_device,
             logical_device,
-            queue,
+            queues,
+            queue_family_indices,
             surface,
             surface_ext,
             surface_info,
@@ -154,35 +175,65 @@ impl DoomApp {
         }
     }
 
+    fn get_queue_family_indices(
+        device: &vk::PhysicalDevice,
+        instance: &ash::Instance,
+        surface_ext: &Surface,
+        surface: &vk::SurfaceKHR
+    ) -> Option<QueueFamilyIndices> {
+        let queue_family_properties = unsafe {
+            instance.get_physical_device_queue_family_properties(*device)
+        };
+        
+        let mut queue_family_indices = QueueFamilyIndices {graphics_family: None, presentation_family: None};
+
+        queue_family_properties
+            .iter()
+            .enumerate()
+            .for_each(|(i, props)| {
+                if props.queue_count > 0 && props.queue_flags.contains(vk::QueueFlags::GRAPHICS) && DoomApp::check_device_extension_support(&instance, &device) {
+                    queue_family_indices.graphics_family = Some(i as u32);
+                }
+
+                if let Ok(surface_supported) = unsafe {
+                    surface_ext.get_physical_device_surface_support(*device, i as u32, *surface)
+                } {
+                    if surface_supported && DoomApp::check_device_extension_support(&instance, &device) {
+                        queue_family_indices.presentation_family = Some(i as u32);
+                    }
+                }
+            });
+
+        if queue_family_indices.is_complete() {
+            return Some(queue_family_indices)
+        }
+        None
+    }
+
     fn create_logical_device(
         instance: &ash::Instance,
+        queue_family_indices: &QueueFamilyIndices,
         physical_device: &vk::PhysicalDevice,
-    ) -> (vk::Queue, ash::Device) {
-        let index = unsafe {
-            // Get indices of queue families that can do graphics
-            instance
-                .get_physical_device_queue_family_properties(*physical_device)
-                .iter()
-                .enumerate()
-                .filter_map(|(i, property)| {
-                    if property.queue_flags.contains(vk::QueueFlags::GRAPHICS)
-                        && Self::check_device_extension_support(instance, physical_device)
-                    {
-                        Some(i as u32)
-                    } else {
-                        None
-                    }
-                })
-                .next()
-                .expect("First device doesn't support graphics queue")
-        };
+    ) -> (Queues, ash::Device) {
 
-        let queue_create_info = vk::DeviceQueueCreateInfo::builder()
-            .queue_family_index(index as u32)
-            .queue_priorities(&[1.]);
+        let mut indices = vec![
+            queue_family_indices.graphics_family.unwrap(),
+            queue_family_indices.presentation_family.unwrap()
+        ];
+        indices.dedup();
+
+        let queue_create_infos = indices
+            .iter()
+            .map(|i| {
+                vk::DeviceQueueCreateInfo::builder()
+                .queue_family_index(*i as u32)
+                .queue_priorities(&[1.])
+                .build()
+            })
+            .collect::<Vec<_>>();
 
         let create_info = vk::DeviceCreateInfo::builder()
-            .queue_create_infos(&[*queue_create_info])
+            .queue_create_infos(&queue_create_infos)
             .build();
 
         let device = unsafe {
@@ -190,9 +241,12 @@ impl DoomApp {
                 .create_device(*physical_device, &create_info, None)
                 .unwrap()
         };
-        let queue = unsafe { device.get_device_queue(index as u32, 0) };
+        let queues = Queues {
+            presentation_queue: unsafe { device.get_device_queue(queue_family_indices.presentation_family.unwrap(), 0) },
+            graphics_queue: unsafe { device.get_device_queue(queue_family_indices.graphics_family.unwrap(), 0) }
+        };
 
-        (queue, device)
+        (queues , device)
     }
 
     fn check_device_extension_support(
@@ -222,6 +276,7 @@ impl DoomApp {
         swapchain_ext: &Swapchain,
         surface: &vk::SurfaceKHR,
         surface_info: &SurfaceInfo,
+        queue_family_indices: &QueueFamilyIndices,
         window: &window::Window,
     ) -> Result<vk::SwapchainKHR> {
         let min_image_count = {
@@ -254,11 +309,18 @@ impl DoomApp {
             .present_mode(surface_info.choose_best_pres_mode()?)
             .clipped(true);
 
-        let create_info = create_info.image_sharing_mode(vk::SharingMode::EXCLUSIVE);
-        // TODO : case where CONCURRENT mode has to be used
-        // (see https://forgottenmaster.github.io/posts/vulkan/lets-learn-vulkan/swapchain/ ,
-        // requires a cleaner implementation of queue selection and storing queue family indices
-        // in our DoomApp instead of selecting the first one that supports graphics)
+        let is_concurrent = queue_family_indices.presentation_family != queue_family_indices.graphics_family;
+        let queue_family_indices_slice = [
+                queue_family_indices.graphics_family.unwrap(),
+                queue_family_indices.presentation_family.unwrap()
+        ];
+
+        let create_info = if is_concurrent {
+            create_info.image_sharing_mode(vk::SharingMode::CONCURRENT)
+                       .queue_family_indices(&queue_family_indices_slice)
+        } else {
+            create_info.image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+        };
 
         unsafe {
             swapchain_ext
