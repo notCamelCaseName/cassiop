@@ -1,7 +1,7 @@
 use {
     crate::{
         surface_info::SurfaceInfo,
-        utility::{self, required_device_extension_names},
+        utility::{self, required_device_extension_names, rusticized_required_device_extension_names},
     },
     anyhow::{Context, Result},
     ash::{
@@ -69,8 +69,8 @@ impl DoomApp {
             "Using device : {}",
             utility::mnt_to_string(&physical_device_properties.device_name)
         );
-        debug!("Creating logical device");
 
+        debug!("Creating surface");
         let surface_loader = Surface::new(&entry, &instance);
         let surface = unsafe {
             ash_window::create_surface(
@@ -85,8 +85,8 @@ impl DoomApp {
 
         let queue_family_indices = DoomApp::get_queue_family_indices(&physical_device, &instance, &surface_loader, &surface).expect("No queue family indices found");
 
+        debug!("Creating logical device");
         let (queues, logical_device) = DoomApp::create_logical_device(&instance, &queue_family_indices, &physical_device);
-        debug!("Creating surface");
 
         let swapchain_loader = Swapchain::new(&instance, &logical_device);
         let swapchain = DoomApp::create_swapchain(&swapchain_loader, &surface, &surface_info, &queue_family_indices, &window)?;
@@ -160,17 +160,17 @@ impl DoomApp {
             Ok(instance
                 .enumerate_physical_devices()?
                 .iter()
-                .map(|dev| {
+                .filter(|&dev| {
                     trace!(
                         "Found physical device : {}",
                         utility::mnt_to_string(
                             &instance.get_physical_device_properties(*dev).device_name
                         )
                     );
-                    dev
+                    DoomApp::check_device_extension_support(instance, dev)
                 })
                 .next()
-                .expect("No physical devices found")
+                .expect("No physical devices supporting required extensions found")
                 .to_owned())
         }
     }
@@ -191,14 +191,14 @@ impl DoomApp {
             .iter()
             .enumerate()
             .for_each(|(i, props)| {
-                if props.queue_count > 0 && props.queue_flags.contains(vk::QueueFlags::GRAPHICS) && DoomApp::check_device_extension_support(&instance, &device) {
+                if props.queue_count > 0 && props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
                     queue_family_indices.graphics_family = Some(i as u32);
                 }
 
                 if let Ok(surface_supported) = unsafe {
                     surface_loader.get_physical_device_surface_support(*device, i as u32, *surface)
                 } {
-                    if surface_supported && DoomApp::check_device_extension_support(&instance, &device) {
+                    if surface_supported {
                         queue_family_indices.presentation_family = Some(i as u32);
                     }
                 }
@@ -234,6 +234,7 @@ impl DoomApp {
 
         let create_info = vk::DeviceCreateInfo::builder()
             .queue_create_infos(&queue_create_infos)
+            .enabled_extension_names(required_device_extension_names())
             .build();
 
         let device = unsafe {
@@ -267,7 +268,7 @@ impl DoomApp {
                 })
                 .collect()
         };
-        required_device_extension_names()
+        rusticized_required_device_extension_names()
             .iter()
             .all(|e| extensions.contains(e))
     }
