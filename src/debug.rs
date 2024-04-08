@@ -1,4 +1,4 @@
-use ash::extensions::ext::DebugUtils;
+use ash::ext::debug_utils;
 use ash::vk::DebugUtilsMessengerCreateFlagsEXT;
 use ash::{vk, Entry, Instance};
 use std::ffi::{CStr, c_char, CString};
@@ -30,19 +30,19 @@ unsafe extern "system" fn vulkan_debug_callback(
 pub fn setup_debug_messenger(
     entry: &Entry,
     instance: &Instance,
-) -> Option<(DebugUtils, vk::DebugUtilsMessengerEXT)> {
+) -> Option<(debug_utils::Instance, vk::DebugUtilsMessengerEXT)> {
     if !ENABLE_VALIDATION_LAYERS {
         return None;
     }
 
-    let create_info = vk::DebugUtilsMessengerCreateInfoEXT::builder()
+    let create_info = vk::DebugUtilsMessengerCreateInfoEXT::default()
         .flags(DebugUtilsMessengerCreateFlagsEXT::empty())
         .message_type(vk::DebugUtilsMessageTypeFlagsEXT::DEVICE_ADDRESS_BINDING | vk::DebugUtilsMessageTypeFlagsEXT::GENERAL
             | vk::DebugUtilsMessageTypeFlagsEXT::PERFORMANCE | vk::DebugUtilsMessageTypeFlagsEXT::VALIDATION)
         .message_severity(vk::DebugUtilsMessageSeverityFlagsEXT::ERROR | vk::DebugUtilsMessageSeverityFlagsEXT::WARNING 
             | vk::DebugUtilsMessageSeverityFlagsEXT::INFO | vk::DebugUtilsMessageSeverityFlagsEXT::VERBOSE)
         .pfn_user_callback(Some(vulkan_debug_callback));
-    let debug_utils: DebugUtils = DebugUtils::new(entry, instance);
+    let debug_utils: debug_utils::Instance = debug_utils::Instance::new(entry, instance);
     let debug_utils_messenger = unsafe {
         debug_utils
             .create_debug_utils_messenger(&create_info, None)
@@ -54,8 +54,8 @@ pub fn setup_debug_messenger(
 
 pub fn check_validation_layer_support(entry: &Entry) {
     for required in REQUIRED_LAYERS.iter() {
-        let found = entry
-            .enumerate_instance_layer_properties()
+        let found = unsafe { entry
+            .enumerate_instance_layer_properties() }
             .unwrap()
             .iter()
             .any(|layer| {

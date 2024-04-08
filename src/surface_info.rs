@@ -1,8 +1,7 @@
 use {
     anyhow::{anyhow, Result},
     ash::{
-        extensions::khr::Surface,
-        vk,
+        vk, khr::surface
     },
     log::info,
     std::cmp,
@@ -17,7 +16,7 @@ pub struct SurfaceInfo {
 
 impl SurfaceInfo {
     pub fn get_surface_info(
-        surface_loader: &Surface,
+        surface_loader: &surface::Instance,
         physical_device: &vk::PhysicalDevice,
         surface: &vk::SurfaceKHR,
     ) -> Result<Self> {

@@ -1,4 +1,4 @@
-use ash::{extensions::khr::Swapchain, vk};
+use ash::{khr::swapchain, khr::portability_subset};
 
 /* Unused cfgs, keeping them here for good measure
     #[cfg(target_os = "macos")]
@@ -8,20 +8,20 @@ use ash::{extensions::khr::Swapchain, vk};
 
 #[cfg(target_os = "macos")]
 pub fn rusticized_required_device_extension_names() -> Vec<String> {
-    vec![String::from(Swapchain::name().to_str().unwrap()),
-        String::from(vk::KhrPortabilitySubsetFn::name().to_str().unwrap())]
+    vec![String::from(swapchain::NAME.to_str().unwrap()),
+        String::from(portability_subset::NAME.to_str().unwrap())]
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn rusticized_required_device_extension_names() -> Vec<String> {
-    vec![String::from(Swapchain::name().to_str().unwrap())]
+    vec![String::from(swapchain::NAME.to_str().unwrap())]
 }
 
 #[cfg(target_os = "macos")]
 pub fn required_device_extension_names() -> &'static [* const i8] {
     const EXT: [*const i8; 2] = [
-        Swapchain::name().as_ptr(),
-        vk::KhrPortabilitySubsetFn::name().as_ptr()
+        swapchain::NAME.as_ptr(),
+        portability_subset::NAME.as_ptr()
     ];
     &EXT
 }
@@ -29,7 +29,7 @@ pub fn required_device_extension_names() -> &'static [* const i8] {
 #[cfg(all(unix, not(target_os = "macos")))]
 pub fn required_device_extension_names() -> &'static [* const i8] {
     const EXT: [*const i8; 1] = [
-        Swapchain::name().as_ptr()
+        swapchain::NAME.as_ptr()
     ];
     &EXT
 }

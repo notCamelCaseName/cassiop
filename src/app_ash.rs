@@ -4,12 +4,13 @@ use {
     },
     anyhow::{Context, Result},
     ash::{
-        extensions::{ext::DebugUtils, khr::{Surface, Swapchain}},
+        ext::debug_utils,
+        khr::{get_physical_device_properties2, portability_enumeration, surface, swapchain},
         vk,
     },
     ash_window,
     log::*,
-    raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle},
+    raw_window_handle::{HasDisplayHandle, HasWindowHandle},
     std::{
         cmp,
         collections::HashSet,
@@ -54,13 +55,13 @@ pub struct DoomApp {
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
     logical_device: ash::Device,
-    debug_report_callback: Option<(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
+    debug_report_callback: Option<(debug_utils::Instance, vk::DebugUtilsMessengerEXT)>,
     queues: Queues,
     queue_family_indices: QueueFamilyIndices,
-    surface_loader: Surface,
+    surface_loader: surface::Instance,
     surface: vk::SurfaceKHR,
     surface_info: SurfaceInfo,
-    swapchain_loader: Swapchain,
+    swapchain_loader: swapchain::Device,
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<SwapchainImage>,
 }
@@ -84,13 +85,13 @@ impl DoomApp {
         let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
         debug!("Creating surface");
-        let surface_loader = Surface::new(&entry, &instance);
+        let surface_loader = surface::Instance::new(&entry, &instance);
         let surface = unsafe {
             ash_window::create_surface(
                 &entry,
                 &instance,
-                window.raw_display_handle(),
-                window.raw_window_handle(),
+                window.display_handle().unwrap().into(),
+                window.window_handle().unwrap().into(),
                 None,
             )?
         };
@@ -101,7 +102,7 @@ impl DoomApp {
         debug!("Creating logical device");
         let (queues, logical_device) = DoomApp::create_logical_device(&instance, &queue_family_indices, &physical_device);
 
-        let swapchain_loader = Swapchain::new(&instance, &logical_device);
+        let swapchain_loader = swapchain::Device::new(&instance, &logical_device);
         let swapchain = DoomApp::create_swapchain(&swapchain_loader, &surface, &surface_info, &queue_family_indices, &window)?;
 
         let swapchain_images = DoomApp::get_swapchain_images(&swapchain_loader, &swapchain, &surface_info.choose_best_color_format()?.format, &logical_device)?;
@@ -125,24 +126,24 @@ impl DoomApp {
 
     fn create_instance(entry: Arc<ash::Entry>, window: &window::Window) -> Result<ash::Instance> {
         let app_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"Doom Ash") };
-        let app_info = vk::ApplicationInfo::builder()
+        let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
             .api_version(vk::API_VERSION_1_3);
 
-        let raw_display_handle = window.raw_display_handle();
-        let reqs = ash_window::enumerate_required_extensions(raw_display_handle)?;
+        let display_handle = window.display_handle().unwrap();
+        let reqs = ash_window::enumerate_required_extensions(display_handle.into())?;
         let mut req_vec = Vec::from(reqs);
 
         if ENABLE_VALIDATION_LAYERS {
-            req_vec.push(DebugUtils::name().as_ptr());
+            req_vec.push(debug_utils::NAME.as_ptr());
         }
         
         if cfg!(target_os = "macos") {
             info!("Enabling required extensions for macOS portability.");
 
             const MACOS_EXT2: [*const c_char; 2] = [
-                vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr(),
-                vk::KhrPortabilityEnumerationFn::name().as_ptr()
+                get_physical_device_properties2::NAME.as_ptr(),
+                portability_enumeration::NAME.as_ptr()
             ];
             req_vec.append(&mut Vec::from(MACOS_EXT2));
         }
@@ -156,7 +157,7 @@ impl DoomApp {
             vk::InstanceCreateFlags::empty()
         };
 
-        let mut create_info = vk::InstanceCreateInfo::builder()
+        let mut create_info = vk::InstanceCreateInfo::default()
             .application_info(&app_info)
             .flags(flags)
             .enabled_extension_names(req_vec.as_slice());
@@ -219,7 +220,7 @@ impl DoomApp {
     fn get_queue_family_indices(
         device: &vk::PhysicalDevice,
         instance: &ash::Instance,
-        surface_loader: &Surface,
+        surface_loader: &surface::Instance,
         surface: &vk::SurfaceKHR
     ) -> Option<QueueFamilyIndices> {
         let queue_family_properties = unsafe {
@@ -266,17 +267,15 @@ impl DoomApp {
         let queue_create_infos = indices
             .iter()
             .map(|i| {
-                vk::DeviceQueueCreateInfo::builder()
+                vk::DeviceQueueCreateInfo::default()
                 .queue_family_index(*i as u32)
                 .queue_priorities(&[1.])
-                .build()
             })
             .collect::<Vec<_>>();
 
-        let create_info = vk::DeviceCreateInfo::builder()
+        let create_info = vk::DeviceCreateInfo::default()
             .queue_create_infos(&queue_create_infos)
-            .enabled_extension_names(required_device_extension_names())
-            .build();
+            .enabled_extension_names(required_device_extension_names());
 
         let device = unsafe {
             instance
@@ -315,7 +314,7 @@ impl DoomApp {
     }
 
     fn create_swapchain(
-        swapchain_loader: &Swapchain,
+        swapchain_loader: &swapchain::Device,
         surface: &vk::SurfaceKHR,
         surface_info: &SurfaceInfo,
         queue_family_indices: &QueueFamilyIndices,
@@ -338,7 +337,7 @@ impl DoomApp {
         let best_format = surface_info.choose_best_color_format()?;
         let swapchain_extent = surface_info.choose_swapchain_extents(window)?;
 
-        let create_info = vk::SwapchainCreateInfoKHR::builder()
+        let create_info = vk::SwapchainCreateInfoKHR::default()
             .surface(*surface)
             .min_image_count(min_image_count)
             .image_format(best_format.format)
@@ -377,24 +376,24 @@ impl DoomApp {
         img_aspect_flags: vk::ImageAspectFlags,
         device: &ash::Device,
     ) -> Result<vk::ImageView> {
-        let component_mapping_builder = vk::ComponentMapping::builder()
+        let component_mapping_builder = vk::ComponentMapping::default()
             .r(vk::ComponentSwizzle::IDENTITY)
             .g(vk::ComponentSwizzle::IDENTITY)
             .b(vk::ComponentSwizzle::IDENTITY)
             .a(vk::ComponentSwizzle::IDENTITY);
-        let img_subresource_range_builder = vk::ImageSubresourceRange::builder()
+        let img_subresource_range_builder = vk::ImageSubresourceRange::default()
             .aspect_mask(img_aspect_flags)
             .base_mip_level(0)
             .level_count(1)
             .base_array_layer(0)
             .layer_count(1);
 
-        let create_info = vk::ImageViewCreateInfo::builder()
+        let create_info = vk::ImageViewCreateInfo::default()
             .image(*image)
             .view_type(vk::ImageViewType::TYPE_2D)
             .format(*format)
-            .components(*component_mapping_builder)
-            .subresource_range(*img_subresource_range_builder);
+            .components(component_mapping_builder)
+            .subresource_range(img_subresource_range_builder);
 
         unsafe {
             device.create_image_view(&create_info, None)
@@ -402,7 +401,7 @@ impl DoomApp {
     }
 
     fn get_swapchain_images(
-        swapchain_loader: &Swapchain,
+        swapchain_loader: &swapchain::Device,
         swapchain: &vk::SwapchainKHR,
         format: &vk::Format,
         device: &ash::Device,
@@ -447,7 +446,7 @@ impl DoomApp {
                             }
                         }
                         _ => (),
-                    }
+                    };
                 }
             })
             .unwrap()
