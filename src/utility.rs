@@ -1,5 +1,4 @@
 use ash::{extensions::khr::Swapchain, vk};
-use ash::{extensions::khr::Swapchain, vk};
 
 /* Unused cfgs, keeping them here for good measure
     #[cfg(target_os = "macos")]
@@ -14,15 +13,8 @@ pub fn rusticized_required_device_extension_names() -> Vec<String> {
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
-#[cfg(target_os = "macos")]
 pub fn rusticized_required_device_extension_names() -> Vec<String> {
-    vec![String::from(Swapchain::name().to_str().unwrap()),
-        String::from(vk::KhrPortabilitySubsetFn::name().to_str().unwrap())]
-}
-
-#[cfg(all(unix, not(target_os = "macos")))]
-pub fn rusticized_required_device_extension_names() -> Vec<String> {
-    vec![String::from(vk::KhrPortabilitySubsetFn::name().to_str().unwrap())]
+    vec![String::from(Swapchain::name().to_str().unwrap())]
 }
 
 #[cfg(target_os = "macos")]
