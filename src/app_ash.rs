@@ -8,13 +8,13 @@ use {
         extensions::khr::{Surface, Swapchain},
         vk,
     },
-    ash_window::{self},
+    ash_window,
     log::*,
     raw_window_handle::{HasRawDisplayHandle, HasRawWindowHandle},
     std::{
         cmp,
         collections::HashSet,
-        ffi::CStr,
+        ffi::{c_char, CStr},
         sync::Arc
     },
     winit::{
@@ -72,8 +72,8 @@ impl DoomApp {
 
         debug!("Creating instance");
         let instance = DoomApp::create_instance(entry.clone(), &window)?;
-        let physical_device = DoomApp::pick_physical_device(&instance)?;
         debug!("Picking physical device");
+        let physical_device = DoomApp::pick_physical_device(&instance)?;
         let physical_device_properties =
             unsafe { instance.get_physical_device_properties(physical_device) };
         info!(
@@ -124,14 +124,26 @@ impl DoomApp {
         let app_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"Doom Ash") };
         let app_info = vk::ApplicationInfo::builder()
             .application_name(app_name)
-            .api_version(vk::make_api_version(0, 1, 0, 0));
+            .api_version(vk::API_VERSION_1_3);
 
         let raw_display_handle = window.raw_display_handle();
         let reqs = ash_window::enumerate_required_extensions(raw_display_handle)?;
+        let mut req_vec = Vec::from(reqs);
+        
+        if cfg!(target_os = "macos") {
+            info!("Enabling required extensions for macOS portability.");
+
+            const MACOS_EXT2: [*const c_char; 2] = [
+                vk::KhrGetPhysicalDeviceProperties2Fn::name().as_ptr(),
+                vk::KhrPortabilityEnumerationFn::name().as_ptr()
+            ];
+            req_vec.append(&mut Vec::from(MACOS_EXT2));
+        }
+
         unsafe { Self::validate_required_extensions(reqs, entry.clone())? };
 
         let flags = if cfg!(target_os = "macos") {
-            info!("Enabling extensions for macOS portability.");
+            info!("Enabling instance create flags for macOS portability.");
             vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
         } else {
             vk::InstanceCreateFlags::empty()
@@ -140,7 +152,7 @@ impl DoomApp {
         let create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .flags(flags)
-            .enabled_extension_names(&reqs);
+            .enabled_extension_names(req_vec.as_slice());
 
         unsafe { Ok(entry.create_instance(&create_info, None)?) }
     }
@@ -159,6 +171,7 @@ impl DoomApp {
             .map(|&ptr| CStr::from_ptr(ptr))
             .collect::<Vec<_>>();
         for req in reqs {
+            debug!("{}", req.to_str().unwrap());
             if !available_extensions.contains(req) {
                 return Err(anyhow::anyhow!(format!(
                     "Required extension {} is not available",
