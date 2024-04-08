@@ -8,18 +8,24 @@ main: src/*
 main-release: src/*
 	cargo build --release
 
-shaders: shaders/*
+shaders: frag-shaders vert-shaders
+
+frag-shaders: shaders/*.frag
+	for file in $^; do \
+		glslc $${file} -o $${file}.spv; \
+	done
+vert-shaders: shaders/*.vert
 	for file in $^; do \
 		glslc $${file} -o $${file}.spv; \
 	done
 
-run: main shaders
+run: shaders main
 	cargo run
 
-release: main-release shaders
+release: shaders main-release
 	cargo run --release
 
-debug: main shaders
+debug: shaders main
 	RUST_LOG=debug cargo run
 
 clean: shaders/*.spv
