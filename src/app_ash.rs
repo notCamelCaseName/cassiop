@@ -1,11 +1,10 @@
 use {
     crate::{
-        surface_info::SurfaceInfo,
-        utility::{self, required_device_extension_names, rusticized_required_device_extension_names},
+        debug::{check_validation_layer_support, get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS}, surface_info::SurfaceInfo, utility::{self, required_device_extension_names, rusticized_required_device_extension_names}
     },
     anyhow::{Context, Result},
     ash::{
-        extensions::khr::{Surface, Swapchain},
+        extensions::{ext::DebugUtils, khr::{Surface, Swapchain}},
         vk,
     },
     ash_window,
@@ -55,6 +54,7 @@ pub struct DoomApp {
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
     logical_device: ash::Device,
+    debug_report_callback: Option<(ash::extensions::ext::DebugUtils, vk::DebugUtilsMessengerEXT)>,
     queues: Queues,
     queue_family_indices: QueueFamilyIndices,
     surface_loader: Surface,
@@ -80,6 +80,8 @@ impl DoomApp {
             "Using device : {}",
             utility::mnt_to_string(&physical_device_properties.device_name)
         );
+
+        let debug_report_callback = setup_debug_messenger(&entry, &instance);
 
         debug!("Creating surface");
         let surface_loader = Surface::new(&entry, &instance);
@@ -109,6 +111,7 @@ impl DoomApp {
             instance,
             physical_device,
             logical_device,
+            debug_report_callback,
             queues,
             queue_family_indices,
             surface,
@@ -129,6 +132,10 @@ impl DoomApp {
         let raw_display_handle = window.raw_display_handle();
         let reqs = ash_window::enumerate_required_extensions(raw_display_handle)?;
         let mut req_vec = Vec::from(reqs);
+
+        if ENABLE_VALIDATION_LAYERS {
+            req_vec.push(DebugUtils::name().as_ptr());
+        }
         
         if cfg!(target_os = "macos") {
             info!("Enabling required extensions for macOS portability.");
@@ -149,10 +156,17 @@ impl DoomApp {
             vk::InstanceCreateFlags::empty()
         };
 
-        let create_info = vk::InstanceCreateInfo::builder()
+        let mut create_info = vk::InstanceCreateInfo::builder()
             .application_info(&app_info)
             .flags(flags)
             .enabled_extension_names(req_vec.as_slice());
+
+        let (_layer_names, layer_names_ptrs) = get_layer_names_and_pointers();
+
+        if ENABLE_VALIDATION_LAYERS {
+            check_validation_layer_support(&entry);
+            create_info = create_info.enabled_layer_names(&layer_names_ptrs);
+        }
 
         unsafe { Ok(entry.create_instance(&create_info, None)?) }
     }
@@ -443,6 +457,9 @@ impl DoomApp {
 impl Drop for DoomApp {
     fn drop(&mut self) {
         unsafe {
+            if let Some((utils, messenger)) = self.debug_report_callback.take() {
+                utils.destroy_debug_utils_messenger(messenger, None);
+            }
             self.swapchain_images.iter().for_each(|img| self.logical_device.destroy_image_view(img.image_view, None));
             self.swapchain_loader.destroy_swapchain(self.swapchain, None);
             self.logical_device.destroy_device(None);
