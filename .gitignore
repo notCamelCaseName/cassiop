@@ -3,3 +3,6 @@
 .envrc
 shell.nix
 .vscode
+
+[Shader compilation remainders]
+/shaders/*.spv
