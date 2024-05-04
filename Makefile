@@ -1,4 +1,3 @@
-export WAYLAND_DISPLAY=""
 
 .PHONY: shaders
 
@@ -26,7 +25,7 @@ release: shaders main-release
 	cargo run --release
 
 debug: shaders main
-	RUST_LOG=debug cargo run
+	RUST_LOG=trace cargo run
 
 clean: shaders/*.spv
 	cargo clean

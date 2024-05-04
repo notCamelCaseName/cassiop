@@ -1,4 +1,4 @@
-#version 460
+#version 450
 
 // truc
 layout(location = 0) in vec3 fragColor;

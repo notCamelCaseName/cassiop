@@ -1,7 +1,7 @@
 /target
 /.direnv
 .envrc
-shell.nix
+/.idea
 .vscode
 
 [Shader compilation remainders]

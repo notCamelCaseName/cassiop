@@ -24,6 +24,7 @@ use {
         window,
     },
 };
+use crate::utility::create_shader_module;
 
 const WINDOW_TITLE: &str = "DoomApp";
 const WINDOW_WIDTH: u32 = 800;
@@ -102,10 +103,19 @@ impl DoomApp {
         debug!("Creating logical device");
         let (queues, logical_device) = DoomApp::create_logical_device(&instance, &queue_family_indices, &physical_device);
 
+        debug!("Creating swapchain");
         let swapchain_loader = swapchain::Device::new(&instance, &logical_device);
         let swapchain = DoomApp::create_swapchain(&swapchain_loader, &surface, &surface_info, &queue_family_indices, &window)?;
 
         let swapchain_images = DoomApp::get_swapchain_images(&swapchain_loader, &swapchain, &surface_info.choose_best_color_format()?.format, &logical_device)?;
+
+        debug!("Loading shaders");
+        let vertex_shader_data = std::fs::read("shaders/triangle.vert.spv").unwrap();
+        let fragment_shader_data = std::fs::read("shaders/triangle.frag.spv").unwrap();
+        trace!("Loading vertex shader");
+        let vertex_shader = create_shader_module(&logical_device, &vertex_shader_data);
+        trace!("Loading fragment shader");
+        let fragment_shader = create_shader_module(&logical_device, &fragment_shader_data);
 
         Ok(Self {
             _entry: entry,
