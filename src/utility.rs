@@ -42,12 +42,17 @@ pub fn mnt_to_string(bytes: &[i8]) -> String {
 }
 
 pub fn create_shader_module(device: &Device, code: &Vec<u8>) -> ShaderModule {
+    let code_u32_vec = &code
+        .chunks_exact(4)
+        .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
+        .collect::<Vec<_>>();
+    let code_u32: &[u32] = code_u32_vec.as_slice();
+    debug!("code_u32 len in bytes : {}", code_u32.len()*4);
+    debug!("code_u32[0] : 0x{:08x?}", code_u32[0]);
+    debug!("code_u32[1] : 0x{:08x?}", code_u32[1]);
+    debug!("code_u32[2] : 0x{:08x?}", code_u32[2]);
+    debug!("code_u32[3] : 0x{:08x?}", code_u32[3]);
     unsafe {
-        let code_u32: &[u32] = std::mem::transmute(code.as_slice());
-        debug!("{:?}", code_u32[0]);
-        debug!("{:?}", code_u32[1]);
-        debug!("{:?}", code_u32[2]);
-        debug!("{:?}", code_u32[3]);
         device.create_shader_module(
             &ShaderModuleCreateInfo::default()
                 .code(
