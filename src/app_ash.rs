@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use ash::Device;
 use ash::vk::{Pipeline, RenderPass};
 use {
     crate::{
@@ -70,7 +69,7 @@ pub struct DoomApp {
     swapchain_images: Vec<SwapchainImage>,
     shader_modules: HashMap<String, ShaderModule>,
     render_pass: RenderPass,
-    pipeline: Pipeline,
+    pipeline: Pipeline
 }
 
 impl DoomApp {
@@ -451,133 +450,6 @@ impl DoomApp {
             })
             .collect::<Result<Vec<_>>>()?;
         Ok(swapchain_images_output)
-    }
-
-    fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout> {
-        unsafe {
-            device.create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::builder()
-                    .set_layouts(&[])
-                    .push_constant_ranges(&[]),
-                None,
-            )
-        }.context("Error trying to create a pipeline layout.")
-    }
-
-    fn create_render_passe(
-        device: &Device,
-        surface_info: &SurfaceInfo,
-    ) -> Result<vk::RenderPass> {
-        let attachment_descriptions = [*vk::AttachmentDescription::builder()
-            .format(surface_info.choose_best_color_format()?.format)
-            .samples(vk::SampleCountFlags::TYPE_1)
-            .load_op(vk::AttachmentLoadOp::CLEAR)
-            .store_op(vk::AttachmentStoreOp::STORE)
-            .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-            .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-            .initial_layout(vk::ImageLayout::UNDEFINED)
-            .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
-
-        let attachment_references = [*vk::AttachmentReference::builder()
-            .attachment(0)
-            .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-        let subpass_descriptions = [*vk::SubpassDescription::builder()
-            .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
-            .color_attachments(&attachment_references)];
-
-        let subpass_dependencies = [*vk::SubpassDependency::builder()
-            .src_subpass(vk::SUBPASS_EXTERNAL)
-            .dst_subpass(0)
-            .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-            .src_access_mask(vk::AccessFlags::empty())
-            .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
-
-        unsafe {device.create_render_pass(
-            &vk::RenderPassCreateInfo::builder()
-                .attachments(&attachment_descriptions)
-                .subpasses(&subpass_descriptions)
-                .dependencies(&subpass_dependencies),
-            None,
-        ) }
-    }
-
-    fn create_graphics_pipeline(
-        vertex_shader: ShaderModule,
-        fragment_shader: ShaderModule,
-        swapchain_extents: vk::Extent2D,
-        pipeline_layout: vk::PipelineLayout,
-        render_pass: vk::RenderPass,
-        device: &Device,
-    ) -> Result<vk::Pipeline> {
-        let name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
-        let shader_stages = [
-            *vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::VERTEX)
-                .module(vertex_shader)
-                .name(name),
-            *vk::PipelineShaderStageCreateInfo::builder()
-                .stage(vk::ShaderStageFlags::FRAGMENT)
-                .module(fragment_shader)
-                .name(name),
-        ];
-        let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder();
-
-        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
-            .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
-            .primitive_restart_enable(false);
-
-        let viewports = [vk::Viewport {
-            width: swapchain_extents.width as f32,
-            height: swapchain_extents.height as f32,
-            max_depth: 1.0,
-            ..vk::Viewport::default()
-        }];
-        let scissors = [vk::Rect2D {
-            extent: swapchain_extents,
-            ..vk::Rect2D::default()
-        }];
-        let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
-            .viewports(&viewports)
-            .scissors(&scissors);
-
-        let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
-            .polygon_mode(vk::PolygonMode::FILL)
-            .cull_mode(vk::CullModeFlags::BACK)
-            .front_face(vk::FrontFace::CLOCKWISE)
-            .line_width(1.0);
-
-        let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
-            .rasterization_samples(vk::SampleCountFlags::TYPE_1);
-
-        let color_blend_attachments = [*vk::PipelineColorBlendAttachmentState::builder()
-            .blend_enable(true)
-            .color_write_mask(vk::ColorComponentFlags::RGBA)
-            .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-            .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-            .color_blend_op(vk::BlendOp::ADD)
-            .src_alpha_blend_factor(vk::BlendFactor::ONE)
-            .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-            .alpha_blend_op(vk::BlendOp::ADD)];
-        let color_blend =
-            vk::PipelineColorBlendStateCreateInfo::builder().attachments(&color_blend_attachments);
-        let graphics_pipeline_create_infos = [*vk::GraphicsPipelineCreateInfo::builder()
-            .stages(&shader_stages)
-            .vertex_input_state(&vertex_input)
-            .input_assembly_state(&input_assembly)
-            .viewport_state(&viewport_state)
-            .rasterization_state(&rasterization_state)
-            .multisample_state(&multisample)
-            .color_blend_state(&color_blend)
-            .layout(pipeline_layout)
-            .render_pass(render_pass)
-            .subpass(0)];
-        unsafe {
-            let pipelines = device
-                .create_graphics_pipelines(vk::PipelineCache::null(), &graphics_pipeline_create_infos, None)
-                .map_err(|(_, e)| e)?;
-            Ok(pipelines[0])
-        }
     }
 
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
