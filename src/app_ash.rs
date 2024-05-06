@@ -434,6 +434,19 @@ impl DoomApp {
         Ok(swapchain_images_output)
     }
 
+    fn create_pipeline_layout(device: &ash::Device) ->Result<vk::PipelineLayout> {
+        Ok(
+            unsafe {
+                device.create_pipeline_layout(
+                    &vk::PipelineLayoutCreateInfo::default()
+                    .set_layouts(&[])
+                    .push_constant_ranges(&[]),
+                    None
+                )
+            }?
+        )
+    }
+
     pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
         let window = winit::window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
