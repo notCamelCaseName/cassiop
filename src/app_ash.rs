@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use ash::Device;
+use ash::prelude::VkResult;
 use ash::vk::{Pipeline, RenderPass};
 use {
     crate::{
@@ -58,7 +59,7 @@ pub struct DoomApp {
     _entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
-    logical_device: ash::Device,
+    logical_device: Device,
     debug_report_callback: Option<(debug_utils::Instance, vk::DebugUtilsMessengerEXT)>,
     queues: Queues,
     queue_family_indices: QueueFamilyIndices,
@@ -132,7 +133,7 @@ impl DoomApp {
         let pipeline = Self::create_graphics_pipeline(
             *shader_modules.get("triangle.vert.spv").unwrap(),
             *shader_modules.get("triangle.frag.spv").unwrap(),
-            vk::Extent2D::default(),
+            surface_info.surface_capabilities.current_extent,
             pipeline_layout,
             render_pass,
             &logical_device
@@ -456,7 +457,7 @@ impl DoomApp {
     fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout> {
         unsafe {
             device.create_pipeline_layout(
-                &vk::PipelineLayoutCreateInfo::builder()
+                &vk::PipelineLayoutCreateInfo::default()
                     .set_layouts(&[])
                     .push_constant_ranges(&[]),
                 None,
@@ -467,9 +468,9 @@ impl DoomApp {
     fn create_render_passe(
         device: &Device,
         surface_info: &SurfaceInfo,
-    ) -> Result<vk::RenderPass> {
-        let attachment_descriptions = [*vk::AttachmentDescription::builder()
-            .format(surface_info.choose_best_color_format()?.format)
+    ) -> VkResult<RenderPass> {
+        let attachment_descriptions = [vk::AttachmentDescription::default()
+            .format(surface_info.choose_best_color_format().unwrap().format)
             .samples(vk::SampleCountFlags::TYPE_1)
             .load_op(vk::AttachmentLoadOp::CLEAR)
             .store_op(vk::AttachmentStoreOp::STORE)
@@ -478,14 +479,14 @@ impl DoomApp {
             .initial_layout(vk::ImageLayout::UNDEFINED)
             .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
 
-        let attachment_references = [*vk::AttachmentReference::builder()
+        let attachment_references = [vk::AttachmentReference::default()
             .attachment(0)
             .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-        let subpass_descriptions = [*vk::SubpassDescription::builder()
+        let subpass_descriptions = [vk::SubpassDescription::default()
             .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
             .color_attachments(&attachment_references)];
 
-        let subpass_dependencies = [*vk::SubpassDependency::builder()
+        let subpass_dependencies = [vk::SubpassDependency::default()
             .src_subpass(vk::SUBPASS_EXTERNAL)
             .dst_subpass(0)
             .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
@@ -494,7 +495,7 @@ impl DoomApp {
             .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
 
         unsafe {device.create_render_pass(
-            &vk::RenderPassCreateInfo::builder()
+            &vk::RenderPassCreateInfo::default()
                 .attachments(&attachment_descriptions)
                 .subpasses(&subpass_descriptions)
                 .dependencies(&subpass_dependencies),
@@ -512,18 +513,18 @@ impl DoomApp {
     ) -> Result<vk::Pipeline> {
         let name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
         let shader_stages = [
-            *vk::PipelineShaderStageCreateInfo::builder()
+            vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::VERTEX)
                 .module(vertex_shader)
                 .name(name),
-            *vk::PipelineShaderStageCreateInfo::builder()
+            vk::PipelineShaderStageCreateInfo::default()
                 .stage(vk::ShaderStageFlags::FRAGMENT)
                 .module(fragment_shader)
                 .name(name),
         ];
-        let vertex_input = vk::PipelineVertexInputStateCreateInfo::builder();
+        let vertex_input = vk::PipelineVertexInputStateCreateInfo::default();
 
-        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::builder()
+        let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
             .primitive_restart_enable(false);
 
@@ -537,20 +538,20 @@ impl DoomApp {
             extent: swapchain_extents,
             ..vk::Rect2D::default()
         }];
-        let viewport_state = vk::PipelineViewportStateCreateInfo::builder()
+        let viewport_state = vk::PipelineViewportStateCreateInfo::default()
             .viewports(&viewports)
             .scissors(&scissors);
 
-        let rasterization_state = vk::PipelineRasterizationStateCreateInfo::builder()
+        let rasterization_state = vk::PipelineRasterizationStateCreateInfo::default()
             .polygon_mode(vk::PolygonMode::FILL)
             .cull_mode(vk::CullModeFlags::BACK)
             .front_face(vk::FrontFace::CLOCKWISE)
             .line_width(1.0);
 
-        let multisample = vk::PipelineMultisampleStateCreateInfo::builder()
+        let multisample = vk::PipelineMultisampleStateCreateInfo::default()
             .rasterization_samples(vk::SampleCountFlags::TYPE_1);
 
-        let color_blend_attachments = [*vk::PipelineColorBlendAttachmentState::builder()
+        let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::default()
             .blend_enable(true)
             .color_write_mask(vk::ColorComponentFlags::RGBA)
             .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
@@ -560,8 +561,8 @@ impl DoomApp {
             .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
             .alpha_blend_op(vk::BlendOp::ADD)];
         let color_blend =
-            vk::PipelineColorBlendStateCreateInfo::builder().attachments(&color_blend_attachments);
-        let graphics_pipeline_create_infos = [*vk::GraphicsPipelineCreateInfo::builder()
+            vk::PipelineColorBlendStateCreateInfo::default().attachments(&color_blend_attachments);
+        let graphics_pipeline_create_infos = [vk::GraphicsPipelineCreateInfo::default()
             .stages(&shader_stages)
             .vertex_input_state(&vertex_input)
             .input_assembly_state(&input_assembly)
