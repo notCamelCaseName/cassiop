@@ -25,7 +25,7 @@ release: shaders main-release
 	cargo run --release
 
 debug: shaders main
-	RUST_LOG=trace cargo run
+	RUST_LOG=cassiop=trace cargo run
 
 clean: shaders/*.spv
 	cargo clean

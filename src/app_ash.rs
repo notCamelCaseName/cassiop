@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use {
     crate::{
         debug::{check_validation_layer_support, get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS}, surface_info::SurfaceInfo, utility::{self, required_device_extension_names, rusticized_required_device_extension_names}
@@ -65,7 +66,7 @@ pub struct DoomApp {
     swapchain_loader: swapchain::Device,
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<SwapchainImage>,
-    shader_modules: Vec<ShaderModule>,
+    shader_modules: HashMap<String, ShaderModule>,
 }
 
 impl DoomApp {
@@ -111,23 +112,14 @@ impl DoomApp {
         let swapchain_images = DoomApp::get_swapchain_images(&swapchain_loader, &swapchain, &surface_info.choose_best_color_format()?.format, &logical_device)?;
 
         debug!("Loading shaders");
-        let mut shader_modules: Vec<ShaderModule> = Vec::new();
+        let mut shader_modules: HashMap<String, ShaderModule> = HashMap::new();
         for elt in std::fs::read_dir("shaders/")? {
             let elt = elt?;
             if elt.path().extension().unwrap().to_str() == Some("spv") {
                 let shader_bin = std::fs::read(elt.path())?;
-                shader_modules.push(create_shader_module(&logical_device, &shader_bin));
+                shader_modules.insert(elt.file_name().into_string().unwrap(), create_shader_module(&logical_device, &shader_bin));
             }
         }
-
-        /*
-        let vertex_shader_data = std::fs::read("shaders/triangle.vert.spv").unwrap();
-        let fragment_shader_data = std::fs::read("shaders/triangle.frag.spv").unwrap();
-        trace!("Loading vertex shader");
-        let vertex_shader = create_shader_module(&logical_device, &vertex_shader_data);
-        trace!("Loading fragment shader");
-        let fragment_shader = create_shader_module(&logical_device, &fragment_shader_data);
-        */
 
         Ok(Self {
             _entry: entry,
@@ -482,7 +474,7 @@ impl Drop for DoomApp {
             if let Some((utils, messenger)) = self.debug_report_callback.take() {
                 utils.destroy_debug_utils_messenger(messenger, None);
             }
-            for shader_module in self.shader_modules.as_slice() {
+            for shader_module in self.shader_modules.values() {
                 self.logical_device.destroy_shader_module(*shader_module, None);
             }
             self.swapchain_images.iter().for_each(|img| self.logical_device.destroy_image_view(img.image_view, None));
