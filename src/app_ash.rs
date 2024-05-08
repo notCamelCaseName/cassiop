@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use ash::Device;
 use ash::prelude::VkResult;
-use ash::vk::{Pipeline, RenderPass};
 use {
     crate::{
         debug::{check_validation_layer_support, get_layer_names_and_pointers, setup_debug_messenger, ENABLE_VALIDATION_LAYERS}, surface_info::SurfaceInfo, utility::{self, required_device_extension_names, rusticized_required_device_extension_names}
@@ -34,6 +33,8 @@ const WINDOW_TITLE: &str = "DoomApp";
 const WINDOW_WIDTH: u32 = 800;
 const WINDOW_HEIGHT: u32 = 600;
 
+const MAX_FRAMES: usize = 2;
+
 struct Queues {
     graphics_queue: vk::Queue,
     presentation_queue: vk::Queue
@@ -55,11 +56,13 @@ struct SwapchainImage {
     image_view: vk::ImageView
 }
 
-pub struct DoomApp {
+pub struct DoomApp
+{
     _entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
     logical_device: Device,
+    device: ash::khr::swapchain::Device,
     debug_report_callback: Option<(debug_utils::Instance, vk::DebugUtilsMessengerEXT)>,
     queues: Queues,
     queue_family_indices: QueueFamilyIndices,
@@ -69,13 +72,22 @@ pub struct DoomApp {
     swapchain_loader: swapchain::Device,
     swapchain: vk::SwapchainKHR,
     swapchain_images: Vec<SwapchainImage>,
+    swapchain_extent: vk::Extent2D,
     shader_modules: HashMap<String, ShaderModule>,
-    render_pass: RenderPass,
-    pipeline: Pipeline,
+    render_pass: vk::RenderPass,
+    pipeline: vk::Pipeline,
+    framebuffers: Vec<vk::Framebuffer>,
+    command_pool: vk::CommandPool,
+    command_buffers: Vec<vk::CommandBuffer>,
+    image_available_semaphores: Vec<vk::Semaphore>,
+    queue_submit_complete_semaphores: Vec<vk::Semaphore>,
+    queue_submit_complete_fences: Vec<vk::Fence>,
 }
 
-impl DoomApp {
-    pub fn new(window: &winit::window::Window) -> Result<Self> {
+impl DoomApp
+{
+    pub fn new(window: &winit::window::Window) -> Result<Self>
+    {
         debug!("Creating entry");
         let entry = Arc::new(ash::Entry::linked());
 
@@ -130,14 +142,58 @@ impl DoomApp {
 
         let render_pass = Self::create_render_passe(&logical_device, &surface_info)?;
 
+        let swapchain_extent = surface_info.surface_capabilities.current_extent;
+
         let pipeline = Self::create_graphics_pipeline(
             *shader_modules.get("triangle.vert.spv").unwrap(),
             *shader_modules.get("triangle.frag.spv").unwrap(),
-            surface_info.surface_capabilities.current_extent,
+            swapchain_extent,
             pipeline_layout,
             render_pass,
             &logical_device
         )?;
+
+        let framebuffers = swapchain_images
+            .iter()
+            .map(|image| {
+                Self::create_framebuffer(
+                    &logical_device,
+                    render_pass,
+                    image.image_view,
+                    swapchain_extent,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let command_pool = Self::create_command_pool(
+            &logical_device,
+            queue_family_indices.graphics_family.unwrap()
+        )?;
+
+        let command_buffers = Self::allocate_command_buffers(
+            &logical_device,
+            command_pool,
+            framebuffers.len() as u32
+        )?;
+
+        unsafe {
+            Self::record_command_buffers(
+                &logical_device,
+                command_buffers.as_slice(),
+                framebuffers.as_slice(),
+                render_pass,
+                swapchain_extent,
+                pipeline
+            )?
+        };
+
+        let (
+            image_available_semaphores,
+            queue_submit_complete_semaphores,
+            queue_submit_complete_fences,
+        ) = Self::create_synchronization(&logical_device, MAX_FRAMES)?;
+
+        let device = swapchain::Device::new(&instance, &logical_device);
 
         Ok(Self {
             _entry: entry,
@@ -153,13 +209,22 @@ impl DoomApp {
             swapchain,
             swapchain_loader,
             swapchain_images,
+            swapchain_extent,
             shader_modules,
             render_pass,
             pipeline,
+            framebuffers,
+            command_pool,
+            command_buffers,
+            image_available_semaphores,
+            queue_submit_complete_semaphores,
+            queue_submit_complete_fences,
+            device
         })
     }
 
-    fn create_instance(entry: Arc<ash::Entry>, window: &window::Window) -> Result<ash::Instance> {
+    fn create_instance(entry: Arc<ash::Entry>, window: &window::Window) -> Result<ash::Instance>
+    {
         let app_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"Doom Ash") };
         let app_info = vk::ApplicationInfo::default()
             .application_name(app_name)
@@ -210,7 +275,8 @@ impl DoomApp {
     unsafe fn validate_required_extensions(
         reqs: &[*const i8],
         entry: Arc<ash::Entry>,
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
         let instance_ext_properties = entry.enumerate_instance_extension_properties(None)?;
         let available_extensions = instance_ext_properties
             .iter()
@@ -232,7 +298,8 @@ impl DoomApp {
         Ok(())
     }
 
-    fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice> {
+    fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice>
+    {
         unsafe {
             Ok(instance
                 .enumerate_physical_devices()?
@@ -257,7 +324,8 @@ impl DoomApp {
         instance: &ash::Instance,
         surface_loader: &surface::Instance,
         surface: &vk::SurfaceKHR
-    ) -> Option<QueueFamilyIndices> {
+    ) -> Option<QueueFamilyIndices>
+    {
         let queue_family_properties = unsafe {
             instance.get_physical_device_queue_family_properties(*device)
         };
@@ -291,7 +359,8 @@ impl DoomApp {
         instance: &ash::Instance,
         queue_family_indices: &QueueFamilyIndices,
         physical_device: &vk::PhysicalDevice,
-    ) -> (Queues, ash::Device) {
+    ) -> (Queues, ash::Device)
+    {
 
         let mut indices = vec![
             queue_family_indices.graphics_family.unwrap(),
@@ -328,7 +397,8 @@ impl DoomApp {
     fn check_device_extension_support(
         instance: &ash::Instance,
         device: &vk::PhysicalDevice,
-    ) -> bool {
+    ) -> bool
+    {
         let extensions: HashSet<_> = unsafe {
             instance
                 .enumerate_device_extension_properties(*device)
@@ -354,7 +424,8 @@ impl DoomApp {
         surface_info: &SurfaceInfo,
         queue_family_indices: &QueueFamilyIndices,
         window: &window::Window,
-    ) -> Result<vk::SwapchainKHR> {
+    ) -> Result<vk::SwapchainKHR>
+    {
         let min_image_count = {
             let max_image_count = surface_info.surface_capabilities.max_image_count;
 
@@ -410,7 +481,8 @@ impl DoomApp {
         format: &vk::Format,
         img_aspect_flags: vk::ImageAspectFlags,
         device: &ash::Device,
-    ) -> Result<vk::ImageView> {
+    ) -> Result<vk::ImageView>
+    {
         let component_mapping_builder = vk::ComponentMapping::default()
             .r(vk::ComponentSwizzle::IDENTITY)
             .g(vk::ComponentSwizzle::IDENTITY)
@@ -440,7 +512,8 @@ impl DoomApp {
         swapchain: &vk::SwapchainKHR,
         format: &vk::Format,
         device: &ash::Device,
-    ) -> Result<Vec<SwapchainImage>> {
+    ) -> Result<Vec<SwapchainImage>>
+    {
         let swapchain_images = unsafe {
             swapchain_loader.get_swapchain_images(*swapchain)?
         };
@@ -454,7 +527,8 @@ impl DoomApp {
         Ok(swapchain_images_output)
     }
 
-    fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout> {
+    fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout>
+    {
         unsafe {
             device.create_pipeline_layout(
                 &vk::PipelineLayoutCreateInfo::default()
@@ -468,7 +542,8 @@ impl DoomApp {
     fn create_render_passe(
         device: &Device,
         surface_info: &SurfaceInfo,
-    ) -> VkResult<RenderPass> {
+    ) -> VkResult<vk::RenderPass>
+    {
         let attachment_descriptions = [vk::AttachmentDescription::default()
             .format(surface_info.choose_best_color_format().unwrap().format)
             .samples(vk::SampleCountFlags::TYPE_1)
@@ -510,7 +585,8 @@ impl DoomApp {
         pipeline_layout: vk::PipelineLayout,
         render_pass: vk::RenderPass,
         device: &Device,
-    ) -> Result<vk::Pipeline> {
+    ) -> Result<vk::Pipeline>
+    {
         let name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
         let shader_stages = [
             vk::PipelineShaderStageCreateInfo::default()
@@ -581,7 +657,145 @@ impl DoomApp {
         }
     }
 
-    pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window {
+    fn create_framebuffer(
+        device: &Device,
+        render_pass: vk::RenderPass,
+        image_view: vk::ImageView,
+        swapchain_extent: vk::Extent2D,
+    ) -> Result<vk::Framebuffer>
+    {
+        let attachments = [image_view];
+        unsafe {
+            device
+                .create_framebuffer(
+                    &vk::FramebufferCreateInfo::default()
+                        .render_pass(render_pass)
+                        .attachments(&attachments)
+                        .width(swapchain_extent.width)
+                        .height(swapchain_extent.height)
+                        .layers(1),
+                    None,
+                )
+                .context("Failed to create a framebuffer.")
+        }
+    }
+
+    fn create_command_pool(device: &Device, queue_family_index: u32) -> Result<vk::CommandPool>
+    {
+        unsafe {
+            device
+                .create_command_pool(
+                    &vk::CommandPoolCreateInfo::default().queue_family_index(queue_family_index),
+                    None,
+                )
+                .context("Failed to create a command pool.")
+        }
+    }
+
+    fn allocate_command_buffers(
+        device: &Device,
+        command_pool: vk::CommandPool,
+        buffer_count: u32,
+    ) -> Result<Vec<vk::CommandBuffer>>
+    {
+        unsafe {
+            device
+                .allocate_command_buffers(
+                    &vk::CommandBufferAllocateInfo::default()
+                        .command_pool(command_pool)
+                        .level(vk::CommandBufferLevel::PRIMARY)
+                        .command_buffer_count(buffer_count),
+                )
+                .context("Failed to allocate command buffers.")
+        }
+    }
+
+    unsafe fn record_command_buffers(
+        device: &Device,
+        command_buffers: &[vk::CommandBuffer],
+        framebuffers: &[vk::Framebuffer],
+        render_pass: vk::RenderPass,
+        swapchain_extent: vk::Extent2D,
+        graphics_pipeline: vk::Pipeline,
+    ) -> Result<()>
+    {
+        for (command_buffer, framebuffer) in command_buffers.into_iter().zip(framebuffers) {
+            device
+                .begin_command_buffer(
+                    *command_buffer,
+                    &vk::CommandBufferBeginInfo::default()
+                        .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE),
+                )
+                .context("Failed to begin command buffer.")?;
+            let clear_values = [vk::ClearValue {
+                color: vk::ClearColorValue {
+                    float32: [0.6, 0.65, 0.4, 1.0],
+                },
+            }];
+            device.cmd_begin_render_pass(
+                *command_buffer,
+                &vk::RenderPassBeginInfo::default()
+                    .render_pass(render_pass)
+                    .framebuffer(*framebuffer)
+                    .render_area(vk::Rect2D::default().extent(swapchain_extent))
+                    .clear_values(&clear_values),
+                vk::SubpassContents::INLINE,
+            );
+            device.cmd_bind_pipeline(
+                *command_buffer,
+                vk::PipelineBindPoint::GRAPHICS,
+                graphics_pipeline,
+            );
+            device.cmd_draw(*command_buffer, 3, 1, 0, 0);
+            device.cmd_end_render_pass(*command_buffer);
+            device
+                .end_command_buffer(*command_buffer)
+                .context("Failed to end command buffer.")?;
+        }
+        Ok(())
+    }
+
+    fn create_synchronization(
+        device: &Device,
+        amount: usize,
+    ) -> Result<(Vec<vk::Semaphore>, Vec<vk::Semaphore>, Vec<vk::Fence>)>
+    {
+        let semaphore_builder = vk::SemaphoreCreateInfo::default();
+        let fence_builder = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+
+        let image_available_semaphores = (0..amount)
+            .map(|_| unsafe {
+                device
+                    .create_semaphore(&semaphore_builder, None)
+                    .context("Failed to create an image available semaphore.")
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let queue_submit_complete_semaphores = (0..amount)
+            .map(|_| unsafe {
+                device
+                    .create_semaphore(&semaphore_builder, None)
+                    .context("Failed to create a queue submit complete semaphore.")
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let queue_submit_complete_fences = (0..amount)
+            .map(|_| unsafe {
+                device
+                    .create_fence(&fence_builder, None)
+                    .context("Failed to create a queue submit complete fence.")
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        Ok((
+            image_available_semaphores,
+            queue_submit_complete_semaphores,
+            queue_submit_complete_fences,
+        ))
+    }
+
+    pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window
+    {
         let window = winit::window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
             .with_inner_size(winit::dpi::LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
@@ -591,7 +805,59 @@ impl DoomApp {
         window
     }
 
-    pub fn main_loop(self, event_loop: EventLoop<()>) {
+    unsafe fn draw(&self, current_frame: usize) -> Result<()> {
+        self.logical_device
+            .wait_for_fences(&[self.queue_submit_complete_fences[current_frame]], true, u64::MAX)
+            .context("Failed to wait for fence while drawing image.")?;
+        self.logical_device
+            .reset_fences(&[self.queue_submit_complete_fences[current_frame]])
+            .context("Failed to reset fence while drawing image.")?;
+
+        let (image_index, _) = self.device
+            .acquire_next_image(
+                self.swapchain,
+                u64::MAX,
+                self.image_available_semaphores[current_frame],
+                vk::Fence::null(),
+            )
+            .context("Failed to acquire next image while drawing.")?;
+
+        let wait_semaphores = [self.image_available_semaphores[current_frame]];
+        let wait_dst_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
+        let command_buffers = [self.command_buffers[image_index as usize]];
+        let signal_semaphores = [self.queue_submit_complete_semaphores[current_frame]];
+
+        let submit_infos = [vk::SubmitInfo::default()
+            .wait_semaphores(&wait_semaphores)
+            .wait_dst_stage_mask(&wait_dst_stages)
+            .command_buffers(&command_buffers)
+            .signal_semaphores(&signal_semaphores)];
+
+        self.logical_device
+            .queue_submit(self.queues.graphics_queue, &submit_infos, self.queue_submit_complete_fences[current_frame])
+            .context("Error while submitting command buffer to he queue during rendering.")?;
+
+        let wait_semaphores = [self.queue_submit_complete_semaphores[current_frame]];
+        let swapchains = [self.swapchain];
+        let image_indices = [image_index];
+
+        self.device
+            .queue_present(
+                self.queues.presentation_queue,
+                &vk::PresentInfoKHR::default()
+                    .wait_semaphores(&wait_semaphores)
+                    .swapchains(&swapchains)
+                    .image_indices(&image_indices),
+            )
+            .context("Error while presenting image to the swapchain.")?;
+        Ok(())
+    }
+
+    pub fn main_loop(self, event_loop: EventLoop<()>)
+    {
+        let mut current_frame = 0;
+        let max_frames = self.image_available_semaphores.len();
+
         event_loop
             .run(move |event, elwt| {
                 if let Event::WindowEvent { event, .. } = event {
@@ -607,6 +873,9 @@ impl DoomApp {
                                 _ => (),
                             }
                         }
+                        WindowEvent::RedrawRequested => {
+                            unsafe { self.draw(current_frame).unwrap() };
+                            current_frame = (current_frame + 1) % max_frames;},
                         _ => (),
                     };
                 }
@@ -615,7 +884,8 @@ impl DoomApp {
     }
 }
 
-impl Drop for DoomApp {
+impl Drop for DoomApp
+{
     fn drop(&mut self) {
         unsafe {
             if let Some((utils, messenger)) = self.debug_report_callback.take() {
@@ -624,6 +894,8 @@ impl Drop for DoomApp {
             for shader_module in self.shader_modules.values() {
                 self.logical_device.destroy_shader_module(*shader_module, None);
             }
+            self.logical_device.destroy_pipeline(self.pipeline, None);
+            self.framebuffers.iter().for_each(|buf| self.logical_device.destroy_framebuffer(*buf, None));
             self.swapchain_images.iter().for_each(|img| self.logical_device.destroy_image_view(img.image_view, None));
             self.swapchain_loader.destroy_swapchain(self.swapchain, None);
             self.logical_device.destroy_device(None);
