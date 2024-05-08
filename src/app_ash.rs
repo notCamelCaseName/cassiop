@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use ash::Device;
+use ash::{Device, khr};
 use ash::prelude::VkResult;
 use {
     crate::{
@@ -58,7 +58,7 @@ struct SwapchainImage {
 
 pub struct DoomApp
 {
-    _entry: Arc<ash::Entry>,
+    entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
     logical_device: Device,
@@ -75,6 +75,7 @@ pub struct DoomApp
     swapchain_extent: vk::Extent2D,
     shader_modules: HashMap<String, ShaderModule>,
     render_pass: vk::RenderPass,
+    pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
     command_pool: vk::CommandPool,
@@ -196,7 +197,7 @@ impl DoomApp
         let device = swapchain::Device::new(&instance, &logical_device);
 
         Ok(Self {
-            _entry: entry,
+            entry,
             instance,
             physical_device,
             logical_device,
@@ -212,6 +213,7 @@ impl DoomApp
             swapchain_extent,
             shader_modules,
             render_pass,
+            pipeline_layout,
             pipeline,
             framebuffers,
             command_pool,
@@ -729,7 +731,7 @@ impl DoomApp
                 .context("Failed to begin command buffer.")?;
             let clear_values = [vk::ClearValue {
                 color: vk::ClearColorValue {
-                    float32: [0.6, 0.65, 0.4, 1.0],
+                    float32: [0., 0., 0. , 1.0],
                 },
             }];
             device.cmd_begin_render_pass(
@@ -888,18 +890,35 @@ impl Drop for DoomApp
 {
     fn drop(&mut self) {
         unsafe {
-            if let Some((utils, messenger)) = self.debug_report_callback.take() {
-                utils.destroy_debug_utils_messenger(messenger, None);
+            self.logical_device.device_wait_idle().unwrap();
+            for semaphore in &self.image_available_semaphores {
+                self.logical_device.destroy_semaphore(*semaphore, None);
+            }
+            for semaphore in &self.queue_submit_complete_semaphores {
+                self.logical_device.destroy_semaphore(*semaphore, None);
+            }
+            for fence in &self.queue_submit_complete_fences {
+                self.logical_device.destroy_fence(*fence, None);
+            }
+            self.logical_device.destroy_command_pool(self.command_pool, None);
+            for framebuffer in &self.framebuffers {
+                self.logical_device.destroy_framebuffer(*framebuffer, None);
             }
             for shader_module in self.shader_modules.values() {
                 self.logical_device.destroy_shader_module(*shader_module, None);
             }
             self.logical_device.destroy_pipeline(self.pipeline, None);
-            self.framebuffers.iter().for_each(|buf| self.logical_device.destroy_framebuffer(*buf, None));
-            self.swapchain_images.iter().for_each(|img| self.logical_device.destroy_image_view(img.image_view, None));
-            self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+            self.logical_device.destroy_render_pass(self.render_pass, None);
+            self.logical_device.destroy_pipeline_layout(self.pipeline_layout, None);
+            for swapchain_image in &self.swapchain_images {
+                self.logical_device.destroy_image_view(swapchain_image.image_view, None);
+            }
+            self.device.destroy_swapchain(self.swapchain, None);
+            surface::Instance::new(&self.entry, &self.instance).destroy_surface(self.surface, None);
             self.logical_device.destroy_device(None);
-            self.surface_loader.destroy_surface(self.surface, None);
+            if let Some((utils, messenger)) = self.debug_report_callback.take() {
+                utils.destroy_debug_utils_messenger(messenger, None);
+            }
             self.instance.destroy_instance(None);
         }
     }
