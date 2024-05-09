@@ -879,13 +879,19 @@ impl DoomApp
     {
         self.device.device_wait_idle().unwrap();
 
-        debug!("Creating swapchain loader");
-        self.swapchain_loader = swapchain::Device::new(&self.instance, &self.device);
+        self.cleanup_swapchain();
 
-        debug!("Creating new swapchain extent");
+        trace!("Getting new surface info");
+        self.surface_info = SurfaceInfo::get_surface_info(
+            &self.surface_loader,
+            &self.physical_device,
+            &self.surface
+        )?;
+
+        trace!("Creating new swapchain extent");
         self.swapchain_extent = self.surface_info.surface_capabilities.current_extent;
 
-        debug!("Creating swapchain");
+        trace!("Creating swapchain");
         self.swapchain = DoomApp::create_swapchain(
             &self.swapchain_loader,
             &self.surface,
@@ -894,7 +900,7 @@ impl DoomApp
             &self.swapchain_extent
         )?;
 
-        debug!("Creating swapchain images");
+        trace!("Creating swapchain images");
         self.swapchain_images = DoomApp::get_swapchain_images(
             &self.swapchain_loader,
             &self.swapchain,
@@ -902,15 +908,15 @@ impl DoomApp
             &self.device
         )?;
 
-        debug!("Creating pipeline layout");
+        trace!("Creating pipeline layout");
         self.pipeline_layout = Self::create_pipeline_layout(&self.device)?;
 
-        debug!("Creating render pass");
+        trace!("Creating render pass");
         self.render_pass = Self::create_render_passe(&self.device, &self.surface_info)?;
 
         self.swapchain_extent = self.surface_info.surface_capabilities.current_extent;
 
-        debug!("Creating pipeline");
+        trace!("Creating pipeline");
         self.pipeline = Self::create_graphics_pipeline(
             *self.shader_modules.get("triangle.vert.spv").unwrap(),
             *self.shader_modules.get("triangle.frag.spv").unwrap(),
@@ -920,7 +926,7 @@ impl DoomApp
             &self.device
         )?;
 
-        debug!("Creating framebuffers");
+        trace!("Creating framebuffers");
         self.framebuffers = self.swapchain_images
             .iter()
             .map(|image| {
@@ -933,14 +939,14 @@ impl DoomApp
             })
             .collect::<Result<Vec<_>>>()?;
 
-        debug!("Creating command buffers");
+        trace!("Creating command buffers");
         self.command_buffers = Self::allocate_command_buffers(
             &self.device,
             self.command_pool,
             self.framebuffers.len() as u32
         )?;
 
-        debug!("Recording command buffers");
+        trace!("Recording command buffers");
         Self::record_command_buffers(
             &self.device,
             self.command_buffers.as_slice(),
@@ -973,12 +979,16 @@ impl DoomApp
                                 _ => (),
                             }
                         },
-                        WindowEvent::Resized(_) => unsafe {
+                        WindowEvent::Resized(..) => unsafe {
                             self.recreate_swapchain().unwrap();
                             //todo!("I should recreate swapchain to adapt to new window size but i would rather crash")
                         }
                         WindowEvent::RedrawRequested => {
-                            unsafe { self.draw(current_frame).unwrap() };
+                            unsafe {
+                                while let Err(..) = self.draw(current_frame) {
+                                    self.recreate_swapchain().unwrap();
+                                }
+                            };
                             current_frame = (current_frame + 1) % max_frames;},
                         _ => (),
                     };
