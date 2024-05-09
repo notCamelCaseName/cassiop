@@ -61,8 +61,7 @@ pub struct DoomApp
     entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
-    logical_device: Device,
-    device: ash::khr::swapchain::Device,
+    device: Device,
     debug_report_callback: Option<(debug_utils::Instance, vk::DebugUtilsMessengerEXT)>,
     queues: Queues,
     queue_family_indices: QueueFamilyIndices,
@@ -83,11 +82,12 @@ pub struct DoomApp
     image_available_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_fences: Vec<vk::Fence>,
+    window: Box<winit::window::Window>
 }
 
 impl DoomApp
 {
-    pub fn new(window: &winit::window::Window) -> Result<Self>
+    pub fn new(window: Box<winit::window::Window>) -> Result<Self>
     {
         debug!("Creating entry");
         let entry = Arc::new(ash::Entry::linked());
@@ -121,13 +121,20 @@ impl DoomApp
         let queue_family_indices = DoomApp::get_queue_family_indices(&physical_device, &instance, &surface_loader, &surface).expect("No queue family indices found");
 
         debug!("Creating logical device");
-        let (queues, logical_device) = DoomApp::create_logical_device(&instance, &queue_family_indices, &physical_device);
+        let (queues, device) = DoomApp::create_logical_device(&instance, &queue_family_indices, &physical_device);
 
         debug!("Creating swapchain");
-        let swapchain_loader = swapchain::Device::new(&instance, &logical_device);
-        let swapchain = DoomApp::create_swapchain(&swapchain_loader, &surface, &surface_info, &queue_family_indices, &window)?;
+        let swapchain_loader = swapchain::Device::new(&instance, &device);
+        let swapchain_extent = surface_info.surface_capabilities.current_extent;
+        let swapchain = DoomApp::create_swapchain(
+            &swapchain_loader,
+            &surface,
+            &surface_info,
+            &queue_family_indices,
+            &swapchain_extent
+        )?;
 
-        let swapchain_images = DoomApp::get_swapchain_images(&swapchain_loader, &swapchain, &surface_info.choose_best_color_format()?.format, &logical_device)?;
+        let swapchain_images = DoomApp::get_swapchain_images(&swapchain_loader, &swapchain, &surface_info.choose_best_color_format()?.format, &device)?;
 
         debug!("Loading shaders");
         let mut shader_modules: HashMap<String, ShaderModule> = HashMap::new();
@@ -135,15 +142,13 @@ impl DoomApp
             let elt = elt?;
             if elt.path().extension().unwrap().to_str() == Some("spv") {
                 let shader_bin = std::fs::read(elt.path())?;
-                shader_modules.insert(elt.file_name().into_string().unwrap(), create_shader_module(&logical_device, &shader_bin));
+                shader_modules.insert(elt.file_name().into_string().unwrap(), create_shader_module(&device, &shader_bin));
             }
         }
 
-        let pipeline_layout = Self::create_pipeline_layout(&logical_device)?;
+        let pipeline_layout = Self::create_pipeline_layout(&device)?;
 
-        let render_pass = Self::create_render_passe(&logical_device, &surface_info)?;
-
-        let swapchain_extent = surface_info.surface_capabilities.current_extent;
+        let render_pass = Self::create_render_passe(&device, &surface_info)?;
 
         let pipeline = Self::create_graphics_pipeline(
             *shader_modules.get("triangle.vert.spv").unwrap(),
@@ -151,14 +156,14 @@ impl DoomApp
             swapchain_extent,
             pipeline_layout,
             render_pass,
-            &logical_device
+            &device
         )?;
 
         let framebuffers = swapchain_images
             .iter()
             .map(|image| {
                 Self::create_framebuffer(
-                    &logical_device,
+                    &device,
                     render_pass,
                     image.image_view,
                     swapchain_extent,
@@ -167,19 +172,19 @@ impl DoomApp
             .collect::<Result<Vec<_>>>()?;
 
         let command_pool = Self::create_command_pool(
-            &logical_device,
+            &device,
             queue_family_indices.graphics_family.unwrap()
         )?;
 
         let command_buffers = Self::allocate_command_buffers(
-            &logical_device,
+            &device,
             command_pool,
             framebuffers.len() as u32
         )?;
 
         unsafe {
             Self::record_command_buffers(
-                &logical_device,
+                &device,
                 command_buffers.as_slice(),
                 framebuffers.as_slice(),
                 render_pass,
@@ -192,15 +197,13 @@ impl DoomApp
             image_available_semaphores,
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
-        ) = Self::create_synchronization(&logical_device, MAX_FRAMES)?;
-
-        let device = swapchain::Device::new(&instance, &logical_device);
+        ) = Self::create_synchronization(&device, MAX_FRAMES)?;
 
         Ok(Self {
             entry,
             instance,
             physical_device,
-            logical_device,
+            device,
             debug_report_callback,
             queues,
             queue_family_indices,
@@ -221,7 +224,7 @@ impl DoomApp
             image_available_semaphores,
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
-            device
+            window
         })
     }
 
@@ -425,7 +428,7 @@ impl DoomApp
         surface: &vk::SurfaceKHR,
         surface_info: &SurfaceInfo,
         queue_family_indices: &QueueFamilyIndices,
-        window: &window::Window,
+        swapchain_extent: &vk::Extent2D,
     ) -> Result<vk::SwapchainKHR>
     {
         let min_image_count = {
@@ -443,14 +446,13 @@ impl DoomApp
 
         let current_transform = surface_info.surface_capabilities.current_transform;
         let best_format = surface_info.choose_best_color_format()?;
-        let swapchain_extent = surface_info.choose_swapchain_extents(window)?;
 
         let create_info = vk::SwapchainCreateInfoKHR::default()
             .surface(*surface)
             .min_image_count(min_image_count)
             .image_format(best_format.format)
             .image_color_space(best_format.color_space)
-            .image_extent(swapchain_extent)
+            .image_extent(*swapchain_extent)
             .image_array_layers(1)
             .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
             .pre_transform(current_transform)
@@ -800,22 +802,24 @@ impl DoomApp
     {
         let window = winit::window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
-            .with_inner_size(winit::dpi::LogicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+            .with_inner_size(winit::dpi::PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
+            //.with_fullscreen(Some(window::Fullscreen::Borderless(None)))
             .build(event_loop)
             .expect("Couldn't create window.");
 
         window
     }
 
-    unsafe fn draw(&self, current_frame: usize) -> Result<()> {
-        self.logical_device
+    unsafe fn draw(&self, current_frame: usize) -> Result<()>
+    {
+        self.device
             .wait_for_fences(&[self.queue_submit_complete_fences[current_frame]], true, u64::MAX)
             .context("Failed to wait for fence while drawing image.")?;
-        self.logical_device
+        self.device
             .reset_fences(&[self.queue_submit_complete_fences[current_frame]])
             .context("Failed to reset fence while drawing image.")?;
 
-        let (image_index, _) = self.device
+        let (image_index, _) = self.swapchain_loader
             .acquire_next_image(
                 self.swapchain,
                 u64::MAX,
@@ -835,7 +839,7 @@ impl DoomApp
             .command_buffers(&command_buffers)
             .signal_semaphores(&signal_semaphores)];
 
-        self.logical_device
+        self.device
             .queue_submit(self.queues.graphics_queue, &submit_infos, self.queue_submit_complete_fences[current_frame])
             .context("Error while submitting command buffer to he queue during rendering.")?;
 
@@ -843,7 +847,7 @@ impl DoomApp
         let swapchains = [self.swapchain];
         let image_indices = [image_index];
 
-        self.device
+        self.swapchain_loader
             .queue_present(
                 self.queues.presentation_queue,
                 &vk::PresentInfoKHR::default()
@@ -855,7 +859,101 @@ impl DoomApp
         Ok(())
     }
 
-    pub fn main_loop(self, event_loop: EventLoop<()>)
+    unsafe fn cleanup_swapchain(&mut self)
+    {
+        trace!("Cleaning up swapchain");
+        for framebuffer in &self.framebuffers {
+            self.device.destroy_framebuffer(*framebuffer, None);
+        }
+        self.device.free_command_buffers(self.command_pool, self.command_buffers.as_slice());
+        self.device.destroy_pipeline(self.pipeline, None);
+        self.device.destroy_render_pass(self.render_pass, None);
+        self.device.destroy_pipeline_layout(self.pipeline_layout, None);
+        for swapchain_image in &self.swapchain_images {
+            self.device.destroy_image_view(swapchain_image.image_view, None);
+        }
+        self.swapchain_loader.destroy_swapchain(self.swapchain, None);
+    }
+
+    unsafe fn recreate_swapchain(&mut self) -> Result<()>
+    {
+        self.device.device_wait_idle().unwrap();
+
+        debug!("Creating swapchain loader");
+        self.swapchain_loader = swapchain::Device::new(&self.instance, &self.device);
+
+        debug!("Creating new swapchain extent");
+        self.swapchain_extent = self.surface_info.surface_capabilities.current_extent;
+
+        debug!("Creating swapchain");
+        self.swapchain = DoomApp::create_swapchain(
+            &self.swapchain_loader,
+            &self.surface,
+            &self.surface_info,
+            &self.queue_family_indices,
+            &self.swapchain_extent
+        )?;
+
+        debug!("Creating swapchain images");
+        self.swapchain_images = DoomApp::get_swapchain_images(
+            &self.swapchain_loader,
+            &self.swapchain,
+            &self.surface_info.choose_best_color_format()?.format,
+            &self.device
+        )?;
+
+        debug!("Creating pipeline layout");
+        self.pipeline_layout = Self::create_pipeline_layout(&self.device)?;
+
+        debug!("Creating render pass");
+        self.render_pass = Self::create_render_passe(&self.device, &self.surface_info)?;
+
+        self.swapchain_extent = self.surface_info.surface_capabilities.current_extent;
+
+        debug!("Creating pipeline");
+        self.pipeline = Self::create_graphics_pipeline(
+            *self.shader_modules.get("triangle.vert.spv").unwrap(),
+            *self.shader_modules.get("triangle.frag.spv").unwrap(),
+            self.swapchain_extent,
+            self.pipeline_layout,
+            self.render_pass,
+            &self.device
+        )?;
+
+        debug!("Creating framebuffers");
+        self.framebuffers = self.swapchain_images
+            .iter()
+            .map(|image| {
+                Self::create_framebuffer(
+                    &self.device,
+                    self.render_pass,
+                    image.image_view,
+                    self.swapchain_extent,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        debug!("Creating command buffers");
+        self.command_buffers = Self::allocate_command_buffers(
+            &self.device,
+            self.command_pool,
+            self.framebuffers.len() as u32
+        )?;
+
+        debug!("Recording command buffers");
+        Self::record_command_buffers(
+            &self.device,
+            self.command_buffers.as_slice(),
+            self.framebuffers.as_slice(),
+            self.render_pass,
+            self.swapchain_extent,
+            self.pipeline
+        )?;
+
+        Ok(())
+    }
+
+    pub fn main_loop(mut self, event_loop: EventLoop<()>)
     {
         let mut current_frame = 0;
         let max_frames = self.image_available_semaphores.len();
@@ -874,6 +972,10 @@ impl DoomApp
                                 }
                                 _ => (),
                             }
+                        },
+                        WindowEvent::Resized(_) => unsafe {
+                            self.recreate_swapchain().unwrap();
+                            //todo!("I should recreate swapchain to adapt to new window size but i would rather crash")
                         }
                         WindowEvent::RedrawRequested => {
                             unsafe { self.draw(current_frame).unwrap() };
@@ -890,32 +992,23 @@ impl Drop for DoomApp
 {
     fn drop(&mut self) {
         unsafe {
-            self.logical_device.device_wait_idle().unwrap();
+            self.device.device_wait_idle().unwrap();
             for semaphore in &self.image_available_semaphores {
-                self.logical_device.destroy_semaphore(*semaphore, None);
+                self.device.destroy_semaphore(*semaphore, None);
             }
             for semaphore in &self.queue_submit_complete_semaphores {
-                self.logical_device.destroy_semaphore(*semaphore, None);
+                self.device.destroy_semaphore(*semaphore, None);
             }
             for fence in &self.queue_submit_complete_fences {
-                self.logical_device.destroy_fence(*fence, None);
-            }
-            self.logical_device.destroy_command_pool(self.command_pool, None);
-            for framebuffer in &self.framebuffers {
-                self.logical_device.destroy_framebuffer(*framebuffer, None);
+                self.device.destroy_fence(*fence, None);
             }
             for shader_module in self.shader_modules.values() {
-                self.logical_device.destroy_shader_module(*shader_module, None);
+                self.device.destroy_shader_module(*shader_module, None);
             }
-            self.logical_device.destroy_pipeline(self.pipeline, None);
-            self.logical_device.destroy_render_pass(self.render_pass, None);
-            self.logical_device.destroy_pipeline_layout(self.pipeline_layout, None);
-            for swapchain_image in &self.swapchain_images {
-                self.logical_device.destroy_image_view(swapchain_image.image_view, None);
-            }
-            self.device.destroy_swapchain(self.swapchain, None);
-            surface::Instance::new(&self.entry, &self.instance).destroy_surface(self.surface, None);
-            self.logical_device.destroy_device(None);
+            self.cleanup_swapchain();
+            self.device.destroy_command_pool(self.command_pool, None);
+            self.surface_loader.destroy_surface(self.surface, None);
+            self.device.destroy_device(None);
             if let Some((utils, messenger)) = self.debug_report_callback.take() {
                 utils.destroy_debug_utils_messenger(messenger, None);
             }

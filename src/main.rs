@@ -9,7 +9,7 @@ fn main() -> Result<()> {
     env_logger::init();
     let event_loop = EventLoop::new()?;
     let window = app_ash::DoomApp::init_window(&event_loop);
-    let app = app_ash::DoomApp::new(&window)?;
+    let app = app_ash::DoomApp::new(Box::new(window))?;
 
     info!("Running");
     app.main_loop(event_loop);
