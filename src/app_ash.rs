@@ -56,6 +56,12 @@ struct SwapchainImage {
     image_view: vk::ImageView
 }
 
+#[repr(C)]
+struct Vertex {
+    position: [f32; 3], // offset 0
+    color: [f32; 3],    // offset 12
+}
+
 pub struct DoomApp
 {
     entry: Arc<ash::Entry>,
@@ -82,12 +88,12 @@ pub struct DoomApp
     image_available_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_fences: Vec<vk::Fence>,
-    window: Box<winit::window::Window>
+    window: Box<window::Window>
 }
 
 impl DoomApp
 {
-    pub fn new(window: Box<winit::window::Window>) -> Result<Self>
+    pub fn new(window: Box<window::Window>) -> Result<Self>
     {
         debug!("Creating entry");
         let entry = Arc::new(ash::Entry::linked());
@@ -364,7 +370,7 @@ impl DoomApp
         instance: &ash::Instance,
         queue_family_indices: &QueueFamilyIndices,
         physical_device: &vk::PhysicalDevice,
-    ) -> (Queues, ash::Device)
+    ) -> (Queues, Device)
     {
 
         let mut indices = vec![
@@ -377,7 +383,7 @@ impl DoomApp
             .iter()
             .map(|i| {
                 vk::DeviceQueueCreateInfo::default()
-                .queue_family_index(*i as u32)
+                .queue_family_index(*i)
                 .queue_priorities(&[1.])
             })
             .collect::<Vec<_>>();
@@ -484,7 +490,7 @@ impl DoomApp
         image: &vk::Image,
         format: &vk::Format,
         img_aspect_flags: vk::ImageAspectFlags,
-        device: &ash::Device,
+        device: &Device,
     ) -> Result<vk::ImageView>
     {
         let component_mapping_builder = vk::ComponentMapping::default()
@@ -508,14 +514,14 @@ impl DoomApp
 
         unsafe {
             device.create_image_view(&create_info, None)
-        }.context("Error occured while trying to create image view")
+        }.context("Error occurred while trying to create image view")
     }
 
     fn get_swapchain_images(
         swapchain_loader: &swapchain::Device,
         swapchain: &vk::SwapchainKHR,
         format: &vk::Format,
-        device: &ash::Device,
+        device: &Device,
     ) -> Result<Vec<SwapchainImage>>
     {
         let swapchain_images = unsafe {
@@ -531,7 +537,7 @@ impl DoomApp
         Ok(swapchain_images_output)
     }
 
-    fn create_pipeline_layout(device: &ash::Device) -> Result<vk::PipelineLayout>
+    fn create_pipeline_layout(device: &Device) -> Result<vk::PipelineLayout>
     {
         unsafe {
             device.create_pipeline_layout(
@@ -798,9 +804,9 @@ impl DoomApp
         ))
     }
 
-    pub fn init_window(event_loop: &EventLoop<()>) -> winit::window::Window
+    pub fn init_window(event_loop: &EventLoop<()>) -> window::Window
     {
-        let window = winit::window::WindowBuilder::new()
+        let window = window::WindowBuilder::new()
             .with_title(WINDOW_TITLE)
             .with_inner_size(winit::dpi::PhysicalSize::new(WINDOW_WIDTH, WINDOW_HEIGHT))
             //.with_fullscreen(Some(window::Fullscreen::Borderless(None)))
@@ -981,7 +987,6 @@ impl DoomApp
                         },
                         WindowEvent::Resized(..) => unsafe {
                             self.recreate_swapchain().unwrap();
-                            //todo!("I should recreate swapchain to adapt to new window size but i would rather crash")
                         }
                         WindowEvent::RedrawRequested => {
                             unsafe {

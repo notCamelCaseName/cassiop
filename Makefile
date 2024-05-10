@@ -1,4 +1,3 @@
-
 .PHONY: shaders
 
 main: src/*
@@ -19,13 +18,13 @@ vert-shaders: shaders/*.vert
 	done
 
 run: shaders main
-	cargo run
+	WAYLAND_DISPLAY="" cargo run
 
 release: shaders main-release
-	cargo run --release
+	WAYLAND_DISPLAY="" cargo run --release
 
 debug: shaders main
-	RUST_LOG=cassiop=trace cargo run
+	WAYLAND_DISPLAY="" RUST_LOG=cassiop=trace cargo run
 
 clean: shaders/*.spv
 	cargo clean

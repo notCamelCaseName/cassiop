@@ -1,7 +1,7 @@
 use std::slice::from_raw_parts;
 use ash::{khr::swapchain, khr::portability_subset, Device};
 use ash::vk::{ShaderModule, ShaderModuleCreateInfo};
-use log::debug;
+use log::{debug, trace};
 
 /* Unused cfgs, keeping them here for good measure
     #[cfg(target_os = "macos")]
@@ -47,11 +47,11 @@ pub fn create_shader_module(device: &Device, code: &Vec<u8>) -> ShaderModule {
         .map(|bytes| u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]))
         .collect::<Vec<_>>();
     let code_u32: &[u32] = code_u32_vec.as_slice();
-    debug!("code_u32 len in bytes : {}", code_u32.len()*4);
-    debug!("code_u32[0] : 0x{:08x?}", code_u32[0]);
-    debug!("code_u32[1] : 0x{:08x?}", code_u32[1]);
-    debug!("code_u32[2] : 0x{:08x?}", code_u32[2]);
-    debug!("code_u32[3] : 0x{:08x?}", code_u32[3]);
+    trace!("code_u32 len in bytes : {}", code_u32.len()*4);
+    trace!("code_u32[0] : 0x{:08x?}", code_u32[0]);
+    trace!("code_u32[1] : 0x{:08x?}", code_u32[1]);
+    trace!("code_u32[2] : 0x{:08x?}", code_u32[2]);
+    trace!("code_u32[3] : 0x{:08x?}", code_u32[3]);
     unsafe {
         device.create_shader_module(
             &ShaderModuleCreateInfo::default()
