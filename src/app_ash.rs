@@ -212,39 +212,6 @@ impl DoomApp
                 color: [0.0,0.0,0.0]
             }
         ];
-        let buffer = unsafe {
-            device
-                .create_buffer(
-                    &vk::BufferCreateInfo::default()
-                        .size((mem::size_of::<Vertex>()* vertices.len()) as u64)
-                        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
-                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
-                    None
-                )?
-        };
-
-        let memory_requirements = unsafe {
-            device.get_buffer_memory_requirements(buffer)
-        };
-
-        let memory_properties = unsafe {
-            instance.get_physical_device_memory_properties(physical_device)
-        };
-
-        let property_flags = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
-
-        let buffer_memory = unsafe {
-            device
-                .allocate_memory(
-                    &vk::MemoryAllocateInfo::default()
-                        .allocation_size(memory_requirements.size)
-                        .memory_type_index(DoomApp::find_valid_memory_type_index(
-                                memory_properties,
-                                memory_requirements,
-                                property_flags
-                            ).expect("No valid memory type index found") as u32),
-                    None)
-        };
 
         Ok(Self {
             entry,
@@ -1019,6 +986,46 @@ impl DoomApp
         )?;
 
         Ok(())
+    }
+
+    fn create_buffer(
+        &self,
+        vertices: &[Vertex]
+    ) -> Result<()> {
+        let buffer = unsafe {
+            self.device
+                .create_buffer(
+                    &vk::BufferCreateInfo::default()
+                        .size((mem::size_of::<Vertex>()* vertices.len()) as u64)
+                        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                    None
+                )?
+        };
+
+        let memory_requirements = unsafe {
+            self.device.get_buffer_memory_requirements(buffer)
+        };
+
+        let memory_properties = unsafe {
+            self.instance.get_physical_device_memory_properties(self.physical_device)
+        };
+
+        let property_flags = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
+
+        let buffer_memory = unsafe {
+            self.device
+                .allocate_memory(
+                    &vk::MemoryAllocateInfo::default()
+                        .allocation_size(memory_requirements.size)
+                        .memory_type_index(DoomApp::find_valid_memory_type_index(
+                                memory_properties,
+                                memory_requirements,
+                                property_flags
+                            ).expect("No valid memory type index found") as u32),
+                    None)
+        };
+        todo!()
     }
 
     fn find_valid_memory_type_index(
