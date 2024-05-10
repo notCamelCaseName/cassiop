@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::mem;
 use ash::{Device, khr};
 use ash::prelude::VkResult;
 use {
@@ -204,6 +205,44 @@ impl DoomApp
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
         ) = Self::create_synchronization(&device, MAX_FRAMES)?;
+
+        let vertices = [
+            Vertex {
+                position: [0.0,0.0,0.0],
+                color: [0.0,0.0,0.0]
+            }
+        ];
+        let buffer = unsafe {
+            device
+                .create_buffer(
+                    &vk::BufferCreateInfo::default()
+                        .size((mem::size_of::<Vertex>()* vertices.len()) as u64)
+                        .usage(vk::BufferUsageFlags::VERTEX_BUFFER)
+                        .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                    None
+                )?
+        };
+
+        let memory_requirements = unsafe {
+            device.get_buffer_memory_requirements(buffer)
+        };
+
+        let memory_properties = unsafe {
+            instance.get_physical_device_memory_properties(physical_device)
+        };
+
+        let buffer_memory = unsafe {
+            device
+                .allocate_memory(
+                    &vk::MemoryAllocateInfo::default()
+                        .allocation_size(memory_requirements.size)
+                        .memory_type_index(DoomApp::find_valid_memory_type_index(
+                                memory_properties,
+                                memory_requirements,
+                                vk::MemoryPropertyFlags::empty()
+                            ).expect("No valid memory type index found") as u32),
+                    None)
+        };
 
         Ok(Self {
             entry,
@@ -608,7 +647,22 @@ impl DoomApp
                 .module(fragment_shader)
                 .name(name),
         ];
-        let vertex_input = vk::PipelineVertexInputStateCreateInfo::default();
+
+        let binding_descriptions = [vk::VertexInputBindingDescription::default()
+            .stride(mem::size_of::<Vertex>().try_into().unwrap())
+            .input_rate(vk::VertexInputRate::VERTEX)
+        ];
+
+        let attribute_descriptions = [vk::VertexInputAttributeDescription::default().format(vk::Format::R32G32B32_SFLOAT),
+            vk::VertexInputAttributeDescription::default()
+                .location(1)
+                .format(vk::Format::R32G32B32_SFLOAT)
+                .offset(12)
+        ];
+
+        let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
+            .vertex_binding_descriptions(&binding_descriptions)
+            .vertex_attribute_descriptions(&attribute_descriptions);
 
         let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
             .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
@@ -963,6 +1017,21 @@ impl DoomApp
         )?;
 
         Ok(())
+    }
+
+    fn find_valid_memory_type_index(
+        memory_properties: vk::PhysicalDeviceMemoryProperties,
+        memory_requirements: vk::MemoryRequirements,
+        flags: vk::MemoryPropertyFlags,
+    ) -> Option<usize> {
+        memory_properties
+            .memory_types
+            .into_iter()
+            .enumerate()
+            .position(|(index, memory_type)| {
+                (memory_requirements.memory_type_bits & (1 << index as u32)) != 0
+                    && memory_type.property_flags.contains(flags)
+            })
     }
 
     pub fn main_loop(mut self, event_loop: EventLoop<()>)
