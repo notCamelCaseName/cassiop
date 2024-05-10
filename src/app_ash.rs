@@ -231,6 +231,8 @@ impl DoomApp
             instance.get_physical_device_memory_properties(physical_device)
         };
 
+        let property_flags = vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT;
+
         let buffer_memory = unsafe {
             device
                 .allocate_memory(
@@ -239,7 +241,7 @@ impl DoomApp
                         .memory_type_index(DoomApp::find_valid_memory_type_index(
                                 memory_properties,
                                 memory_requirements,
-                                vk::MemoryPropertyFlags::empty()
+                                property_flags
                             ).expect("No valid memory type index found") as u32),
                     None)
         };
