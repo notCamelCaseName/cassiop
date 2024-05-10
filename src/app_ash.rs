@@ -36,6 +36,12 @@ const WINDOW_HEIGHT: u32 = 600;
 
 const MAX_FRAMES: usize = 2;
 
+const FILL_COLOR: [vk::ClearValue; 1] = [vk::ClearValue {
+    color: vk::ClearColorValue {
+        float32: [0.1, 0.1, 0.1 , 1.0],
+    },
+}];
+
 struct Queues {
     graphics_queue: vk::Queue,
     presentation_queue: vk::Queue
@@ -58,9 +64,9 @@ struct SwapchainImage {
 }
 
 #[repr(C)]
-struct Vertex {
-    position: [f32; 3], // offset 0
-    color: [f32; 3],    // offset 12
+pub struct Vertex {
+    pub position: [f32; 3], // offset 0
+    pub color: [f32; 3],    // offset 12
 }
 
 pub struct DoomApp
@@ -89,12 +95,14 @@ pub struct DoomApp
     image_available_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_fences: Vec<vk::Fence>,
-    window: Box<window::Window>
+    buffers: Vec<vk::Buffer>,
+    memories: Vec<vk::DeviceMemory>,
+    nb_vertices: u32,
 }
 
 impl DoomApp
 {
-    pub fn new(window: Box<window::Window>) -> Result<Self>
+    pub fn new(window: &window::Window) -> Result<Self>
     {
         debug!("Creating entry");
         let entry = Arc::new(ash::Entry::linked());
@@ -189,29 +197,13 @@ impl DoomApp
             framebuffers.len() as u32
         )?;
 
-        unsafe {
-            Self::record_command_buffers(
-                &device,
-                command_buffers.as_slice(),
-                framebuffers.as_slice(),
-                render_pass,
-                swapchain_extent,
-                pipeline
-            )?
-        };
-
         let (
             image_available_semaphores,
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
         ) = Self::create_synchronization(&device, MAX_FRAMES)?;
 
-        let vertices = [
-            Vertex {
-                position: [0.0,0.0,0.0],
-                color: [0.0,0.0,0.0]
-            }
-        ];
+
 
         Ok(Self {
             entry,
@@ -238,7 +230,9 @@ impl DoomApp
             image_available_semaphores,
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
-            window
+            buffers: Vec::new(),
+            memories: Vec::new(),
+            nb_vertices: 0,
         })
     }
 
@@ -622,7 +616,9 @@ impl DoomApp
             .input_rate(vk::VertexInputRate::VERTEX)
         ];
 
-        let attribute_descriptions = [vk::VertexInputAttributeDescription::default().format(vk::Format::R32G32B32_SFLOAT),
+        let attribute_descriptions = [
+            vk::VertexInputAttributeDescription::default()
+                .format(vk::Format::R32G32B32_SFLOAT),
             vk::VertexInputAttributeDescription::default()
                 .location(1)
                 .format(vk::Format::R32G32B32_SFLOAT)
@@ -743,45 +739,44 @@ impl DoomApp
         }
     }
 
-    unsafe fn record_command_buffers(
-        device: &Device,
-        command_buffers: &[vk::CommandBuffer],
-        framebuffers: &[vk::Framebuffer],
-        render_pass: vk::RenderPass,
-        swapchain_extent: vk::Extent2D,
-        graphics_pipeline: vk::Pipeline,
-    ) -> Result<()>
+    unsafe fn record_command_buffers(&self) -> Result<()>
     {
-        for (command_buffer, framebuffer) in command_buffers.into_iter().zip(framebuffers) {
-            device
+        for (command_buffer, framebuffer) in self.command_buffers.iter().zip(&self.framebuffers) {
+            self.device
                 .begin_command_buffer(
                     *command_buffer,
                     &vk::CommandBufferBeginInfo::default()
                         .flags(vk::CommandBufferUsageFlags::SIMULTANEOUS_USE),
                 )
                 .context("Failed to begin command buffer.")?;
-            let clear_values = [vk::ClearValue {
-                color: vk::ClearColorValue {
-                    float32: [0., 0., 0. , 1.0],
-                },
-            }];
-            device.cmd_begin_render_pass(
+
+            self.device.cmd_begin_render_pass(
                 *command_buffer,
                 &vk::RenderPassBeginInfo::default()
-                    .render_pass(render_pass)
+                    .render_pass(self.render_pass)
                     .framebuffer(*framebuffer)
-                    .render_area(vk::Rect2D::default().extent(swapchain_extent))
-                    .clear_values(&clear_values),
+                    .render_area(vk::Rect2D::default().extent(self.swapchain_extent))
+                    .clear_values(&FILL_COLOR),
                 vk::SubpassContents::INLINE,
             );
-            device.cmd_bind_pipeline(
+
+            self.device.cmd_bind_pipeline(
                 *command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
-                graphics_pipeline,
+                self.pipeline,
             );
-            device.cmd_draw(*command_buffer, 3, 1, 0, 0);
-            device.cmd_end_render_pass(*command_buffer);
-            device
+
+            self.device.cmd_bind_vertex_buffers(*command_buffer, 0, self.buffers.as_slice(), &[0]);
+
+            self.device.cmd_draw(
+                *command_buffer,
+                self.nb_vertices,
+                1, 0, 0
+            );
+
+            self.device.cmd_end_render_pass(*command_buffer);
+
+            self.device
                 .end_command_buffer(*command_buffer)
                 .context("Failed to end command buffer.")?;
         }
@@ -976,22 +971,26 @@ impl DoomApp
         )?;
 
         trace!("Recording command buffers");
-        Self::record_command_buffers(
-            &self.device,
-            self.command_buffers.as_slice(),
-            self.framebuffers.as_slice(),
-            self.render_pass,
-            self.swapchain_extent,
-            self.pipeline
-        )?;
+        self.record_command_buffers()?;
 
         Ok(())
     }
 
-    fn create_buffer(
-        &self,
+    pub fn load_vertices(
+        &mut self,
         vertices: &[Vertex]
-    ) -> Result<()> {
+    ) -> Result<()>
+    {
+        self.create_buffer(vertices)?;
+        self.nb_vertices += vertices.len() as u32;
+        Ok(())
+    }
+
+    fn create_buffer(
+        &mut self,
+        vertices: &[Vertex]
+    ) -> Result<()>
+    {
         let buffer = unsafe {
             self.device
                 .create_buffer(
@@ -1002,6 +1001,7 @@ impl DoomApp
                     None
                 )?
         };
+        self.buffers.push(buffer);
 
         let memory_requirements = unsafe {
             self.device.get_buffer_memory_requirements(buffer)
@@ -1023,16 +1023,40 @@ impl DoomApp
                                 memory_requirements,
                                 property_flags
                             ).expect("No valid memory type index found") as u32),
-                    None)
+                    None)?
         };
-        todo!()
+        self.memories.push(buffer_memory);
+
+        unsafe {
+            self.device
+                .bind_buffer_memory(buffer, buffer_memory, 0)
+                .context("Failed to bind the buffer memory to the vertex buffer.")?;
+        }
+
+        let write_ptr = unsafe {
+            self.device
+                .map_memory(
+                    buffer_memory,
+                    0,
+                    memory_requirements.size,
+                    vk::MemoryMapFlags::empty(),
+                )
+                .context("Failed to map the buffer memory.")? as *mut Vertex
+        };
+
+        unsafe { std::ptr::copy(vertices.as_ptr(), write_ptr, vertices.len()) };
+
+        unsafe { self.device.unmap_memory(buffer_memory) };
+
+        Ok(())
     }
 
     fn find_valid_memory_type_index(
         memory_properties: vk::PhysicalDeviceMemoryProperties,
         memory_requirements: vk::MemoryRequirements,
         flags: vk::MemoryPropertyFlags,
-    ) -> Option<usize> {
+    ) -> Option<usize>
+    {
         memory_properties
             .memory_types
             .into_iter()
@@ -1043,10 +1067,12 @@ impl DoomApp
             })
     }
 
-    pub fn main_loop(mut self, event_loop: EventLoop<()>)
+    pub fn run(mut self, event_loop: EventLoop<()>)
     {
         let mut current_frame = 0;
         let max_frames = self.image_available_semaphores.len();
+
+        unsafe {self.record_command_buffers().unwrap()};
 
         event_loop
             .run(move |event, elwt| {
@@ -1086,6 +1112,13 @@ impl Drop for DoomApp
     fn drop(&mut self) {
         unsafe {
             self.device.device_wait_idle().unwrap();
+
+            for memory in &self.memories {
+                self.device.free_memory(*memory, None);
+            }
+            for buffer in &self.buffers {
+                self.device.destroy_buffer(*buffer, None);
+            }
             for semaphore in &self.image_available_semaphores {
                 self.device.destroy_semaphore(*semaphore, None);
             }
