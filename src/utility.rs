@@ -1,7 +1,6 @@
-use std::slice::from_raw_parts;
-use ash::{khr::swapchain, khr::portability_subset, Device};
+use ash::{khr::swapchain, Device};
 use ash::vk::{ShaderModule, ShaderModuleCreateInfo};
-use log::{debug, trace};
+use log::{trace};
 
 /* Unused cfgs, keeping them here for good measure
     #[cfg(target_os = "macos")]

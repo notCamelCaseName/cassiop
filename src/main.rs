@@ -2,6 +2,7 @@ mod app_ash;
 mod surface_info;
 mod utility;
 mod debug;
+mod vulkan_functions;
 
 use {anyhow::Result, log::info, winit::event_loop::EventLoop};
 use app_ash::Vertex;
@@ -12,37 +13,41 @@ fn main() -> Result<()> {
     let window = app_ash::DoomApp::init_window(&event_loop);
     let mut app = app_ash::DoomApp::new(&window)?;
 
-    let vertex_data = [
+    let triangle1 = [
         Vertex {
-            position: [-0.4, -0.4, 0.0],
+            position: [-0.8, -0.8, 0.0],
             color: [1.0, 0.0, 0.0],
         },
         Vertex {
-            position: [0.4, 0.4, 0.0],
+            position: [0.8, 0.8, 0.0],
             color: [0.0, 1.0, 0.0],
         },
         Vertex {
-            position: [-0.4, 0.4, 0.0],
+            position: [-0.8, 0.8, 0.0],
             color: [0.0, 0.0, 1.0],
         },
+    ];
 
+    let triangle2 = [
         Vertex {
-            position: [-0.4, -0.4, 0.0],
+            position: [-0.8, -0.8, 0.0],
             color: [1.0, 0.0, 0.0],
         },
         Vertex {
-            position: [0.4, -0.4, 0.0],
+            position: [0.8, -0.8, 0.0],
             color: [1.0, 1.0, 0.0],
         },
         Vertex {
-            position: [0.4, 0.4, 0.0],
+            position: [0.8, 0.8, 0.0],
             color: [0.0, 1.0, 0.0],
         },
     ];
 
-    app.load_vertices(&vertex_data).unwrap();
+    app.load_vertices(&triangle1).unwrap();
+    app.load_vertices(&triangle2).unwrap();
+
 
     info!("Running");
-    app.run(event_loop);
+    app.run(event_loop, window);
     Ok(())
 }
