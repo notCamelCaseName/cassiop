@@ -31,7 +31,7 @@ pub(crate) use {
         window,
     },
 };
-pub use crate::app_ash::Vertex;
+pub use crate::app_ash::{Vertex, Mesh};
 pub use crate::utility::create_shader_module;
 
 pub const WINDOW_TITLE: &str = "DoomApp";
@@ -762,6 +762,46 @@ pub unsafe fn create_staged_buffer<T>(
     Ok((gpu_buffer, gpu_buffer_memory))
 }
 
+unsafe fn create_vertex_buffer(
+    instance: &ash::Instance,
+    device: &Device,
+    physical_device: PhysicalDevice,
+    vertices: &[Vertex],
+    transfer_command_pool: CommandPool,
+    transfer_queue: Queue,
+) -> Result<(Buffer, DeviceMemory)> {
+    create_staged_buffer(
+        instance,
+        device,
+        physical_device,
+        vertices,
+        BufferUsageFlags::VERTEX_BUFFER,
+        transfer_command_pool,
+        transfer_queue,
+    )
+        .context("Failed to create a vertex buffer.")
+}
+
+pub unsafe fn create_index_buffer(
+    instance: &ash::Instance,
+    device: &Device,
+    physical_device: PhysicalDevice,
+    indices: &[u16],
+    transfer_command_pool: CommandPool,
+    transfer_queue: Queue,
+) -> Result<(Buffer, DeviceMemory)> {
+    create_staged_buffer(
+        instance,
+        device,
+        physical_device,
+        indices,
+        BufferUsageFlags::INDEX_BUFFER,
+        transfer_command_pool,
+        transfer_queue,
+    )
+        .context("Failed to create an index buffer.")
+}
+
 pub fn create_descriptor_set_layout(device: &Device) -> Result<DescriptorSetLayout>
 {
     unsafe {
@@ -837,4 +877,40 @@ pub fn allocate_descriptor_sets(
             )
             .context("Failed to allocate descriptor sets.")
     }
+}
+
+pub unsafe fn create_mesh(
+    instance: &ash::Instance,
+    device: &Device,
+    physical_device: PhysicalDevice,
+    transfer_command_pool: CommandPool,
+    transfer_queue: Queue,
+    vertex_buffer_data: &[Vertex],
+    index_buffer_data: &[u16],
+) -> Result<Mesh> {
+    let (vertex_buffer, vertex_buffer_memory) = create_vertex_buffer(
+        instance,
+        device,
+        physical_device,
+        vertex_buffer_data,
+        transfer_command_pool,
+        transfer_queue,
+    )
+        .context("Error while trying to create vertex buffer for a mesh.")?;
+    let (index_buffer, index_buffer_memory) = create_index_buffer(
+        instance,
+        device,
+        physical_device,
+        index_buffer_data,
+        transfer_command_pool,
+        transfer_queue,
+    )
+        .context("Error while trying to create index buffer for a mesh.")?;
+    Ok(Mesh {
+        vertex_buffer,
+        vertex_buffer_memory,
+        index_buffer,
+        index_buffer_memory,
+        index_count: index_buffer_data.len()
+    })
 }

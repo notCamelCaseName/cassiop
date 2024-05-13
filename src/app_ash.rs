@@ -15,6 +15,14 @@ pub struct ModelViewProjection {
     model: Mat4,
 }
 
+pub struct Mesh {
+    pub(crate) vertex_buffer: Buffer,
+    pub(crate) vertex_buffer_memory: DeviceMemory,
+    pub(crate) index_buffer: Buffer,
+    pub(crate) index_buffer_memory: DeviceMemory,
+    pub(crate) index_count: usize
+}
+
 pub struct DoomApp
 {
     entry: Arc<ash::Entry>,
@@ -42,9 +50,7 @@ pub struct DoomApp
     image_available_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_fences: Vec<vk::Fence>,
-    buffers: Vec<vk::Buffer>,
-    memories: Vec<vk::DeviceMemory>,
-    nb_vertices: u32,
+    meshes: Vec<Mesh>,
 }
 
 impl DoomApp
@@ -168,10 +174,6 @@ impl DoomApp
             queue_submit_complete_fences,
         ) = create_synchronization(&device, MAX_FRAMES)?;
 
-        debug!("Creating uniform buffers");
-        let buffers = Vec::new();
-        let memories = Vec::new();
-
         info!("Initialization done");
         Ok(Self {
             entry,
@@ -199,9 +201,7 @@ impl DoomApp
             image_available_semaphores,
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
-            buffers,
-            memories,
-            nb_vertices: 0,
+            meshes: Vec::new(),
         })
     }
     unsafe fn record_command_buffers(&self) -> Result<()>
@@ -231,13 +231,23 @@ impl DoomApp
                 self.pipeline,
             );
 
-            self.device.cmd_bind_vertex_buffers(*command_buffer, 0, self.buffers.as_slice(), &[0]);
-
-            self.device.cmd_draw(
-                *command_buffer,
-                self.nb_vertices,
-                1, 0, 0
-            );
+            for mesh in &self.meshes {
+                self.device.cmd_bind_vertex_buffers(*command_buffer, 0, &[mesh.vertex_buffer], &[0]);
+                self.device.cmd_bind_index_buffer(
+                    *command_buffer,
+                    mesh.index_buffer,
+                    0,
+                    IndexType::UINT16,
+                );
+                self.device.cmd_draw_indexed(
+                    *command_buffer,
+                    mesh.index_count.try_into().unwrap(),
+                    1,
+                    0,
+                    0,
+                    0,
+                );
+            }
 
             self.device.cmd_end_render_pass(*command_buffer);
 
@@ -413,22 +423,19 @@ impl DoomApp
 
     pub fn load_vertices(
         &mut self,
-        vertices: &[Vertex]
+        vertices: &[Vertex],
+        indices: &[u16]
     ) -> Result<()>
     {
-        let (buffer, buffer_memory) = unsafe {create_staged_buffer(
+        self.meshes.push(unsafe {create_mesh(
             &self.instance,
             &self.device,
             self.physical_device,
-            vertices,
-            BufferUsageFlags::VERTEX_BUFFER,
             self.command_pool,
-            self.queues.graphics_queue,
-        )
-            .context("Failed to create a vertex buffer.")? };
-        self.buffers.push(buffer);
-        self.memories.push(buffer_memory);
-        self.nb_vertices += vertices.len() as u32;
+            self.queues.presentation_queue,
+            vertices,
+            indices
+        )?});
         Ok(())
     }
 
@@ -489,11 +496,11 @@ impl Drop for DoomApp
         unsafe {
             self.device.device_wait_idle().unwrap();
 
-            for memory in &self.memories {
-                self.device.free_memory(*memory, None);
-            }
-            for buffer in &self.buffers {
-                self.device.destroy_buffer(*buffer, None);
+            for mesh in &self.meshes {
+                self.device.free_memory(mesh.index_buffer_memory, None);
+                self.device.destroy_buffer(mesh.index_buffer, None);
+                self.device.free_memory(mesh.vertex_buffer_memory, None);
+                self.device.destroy_buffer(mesh.vertex_buffer, None);
             }
             for semaphore in &self.image_available_semaphores {
                 self.device.destroy_semaphore(*semaphore, None);
