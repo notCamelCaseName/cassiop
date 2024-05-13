@@ -42,6 +42,7 @@ pub struct DoomApp
     shader_modules: HashMap<String, ShaderModule>,
     render_pass: vk::RenderPass,
     set_layouts: Vec<vk::DescriptorSetLayout>,
+    descriptor_sets: Vec<DescriptorSet>,
     pipeline_layout: vk::PipelineLayout,
     pipeline: vk::Pipeline,
     framebuffers: Vec<vk::Framebuffer>,
@@ -51,6 +52,7 @@ pub struct DoomApp
     queue_submit_complete_semaphores: Vec<vk::Semaphore>,
     queue_submit_complete_fences: Vec<vk::Fence>,
     meshes: Vec<Mesh>,
+    uniform_buffers: Vec<(Buffer, DeviceMemory)>,
 }
 
 impl DoomApp
@@ -121,8 +123,17 @@ impl DoomApp
         }
 
         let mut set_layouts = Vec::new();
-        //let uniform_buffers_descriptor_set_layouts = create_descriptor_set_layout(&device)?;
-        //set_layouts.push(uniform_buffers_descriptor_set_layouts);
+        let uniform_buffers_descriptor_set_layouts = create_descriptor_set_layout(&device)?;
+        set_layouts.push(uniform_buffers_descriptor_set_layouts);
+
+        let descriptor_pool = create_descriptor_pool(&device, swapchain_images.len() as u32)?;
+
+        let descriptor_sets = allocate_descriptor_sets(
+            &device,
+            descriptor_pool,
+            set_layouts[0],
+            swapchain_images.len()
+        )?;
 
         let pipeline_layout = create_pipeline_layout(
             &device,
@@ -174,6 +185,16 @@ impl DoomApp
             queue_submit_complete_fences,
         ) = create_synchronization(&device, MAX_FRAMES)?;
 
+        debug!("Creating uniform buffers");
+        let uniform_buffers = create_uniform_buffers(
+            &instance,
+            &device,
+            physical_device,
+            swapchain_images.len()
+        )?;
+
+        update_descriptor_sets(&device, &uniform_buffers, &descriptor_sets);
+
         info!("Initialization done");
         Ok(Self {
             entry,
@@ -193,6 +214,7 @@ impl DoomApp
             shader_modules,
             render_pass,
             set_layouts,
+            descriptor_sets,
             pipeline_layout,
             pipeline,
             framebuffers,
@@ -202,11 +224,17 @@ impl DoomApp
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
             meshes: Vec::new(),
+            uniform_buffers,
         })
     }
     unsafe fn record_command_buffers(&self) -> Result<()>
     {
-        for (command_buffer, framebuffer) in self.command_buffers.iter().zip(&self.framebuffers) {
+        for image_index in 0..self.framebuffers.len()
+        {
+            let command_buffer = &self.command_buffers[image_index];
+            let framebuffer = &self.framebuffers[image_index];
+            let descriptor_set = &self.descriptor_sets[image_index];
+
             self.device
                 .begin_command_buffer(
                     *command_buffer,
@@ -229,6 +257,15 @@ impl DoomApp
                 *command_buffer,
                 vk::PipelineBindPoint::GRAPHICS,
                 self.pipeline,
+            );
+
+            self.device.cmd_bind_descriptor_sets(
+                *command_buffer,
+                PipelineBindPoint::GRAPHICS,
+                self.pipeline_layout,
+                0,
+                &[*descriptor_set],
+                &[],
             );
 
             for mesh in &self.meshes {
@@ -270,7 +307,7 @@ impl DoomApp
         window
     }
 
-    unsafe fn draw(&self, current_frame: usize) -> Result<()>
+    unsafe fn draw(&self, current_frame: usize, mvp: &ModelViewProjection) -> Result<()>
     {
         self.device
             .wait_for_fences(&[self.queue_submit_complete_fences[current_frame]], true, u64::MAX)
@@ -287,6 +324,21 @@ impl DoomApp
                 vk::Fence::null(),
             )
             .context("Failed to acquire next image while drawing.")?;
+
+        // update the uniform buffer with the MVP.
+        let uniform_memory = self.uniform_buffers[image_index as usize].1;
+        let dst = self.device
+            .map_memory(
+                uniform_memory,
+                0,
+                mem::size_of::<ModelViewProjection>().try_into().unwrap(),
+                MemoryMapFlags::empty(),
+            )
+            .context("Failed to map uniform buffer memory.")?
+            as *mut ModelViewProjection;
+        let src = std::ptr::from_ref(mvp);
+        std::ptr::copy_nonoverlapping(src, dst, 1);
+        self.device.unmap_memory(uniform_memory);
 
         let wait_semaphores = [self.image_available_semaphores[current_frame]];
         let wait_dst_stages = [vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT];
@@ -444,6 +496,16 @@ impl DoomApp
         let mut current_frame = 0;
         let max_frames = self.image_available_semaphores.len();
 
+        let mut mvp = ModelViewProjection {
+            model: Mat4::IDENTITY,
+            view: Mat4::look_at_rh(
+                Vec3::new(0.0, 0.0, 2.0),
+                Vec3::new(0.0, 0.0, 0.0),
+                Vec3::new(0.0, 1.0, 0.0),
+            ),
+            projection: Mat4::perspective_rh(45.0_f32.to_radians(), WINDOW_WIDTH as f32/WINDOW_HEIGHT as f32, 0.1, 100.0),
+        };
+
         let mut timestamp = std::time::Instant::now();
 
         unsafe {self.record_command_buffers().unwrap()};
@@ -463,12 +525,20 @@ impl DoomApp
                                 _ => (),
                             }
                         },
-                        WindowEvent::Resized(..) => unsafe {
-                            self.recreate_swapchain(&window).unwrap();
+                        WindowEvent::Resized(size) => {
+                            mvp.projection = Mat4::perspective_rh(
+                                45.0_f32.to_radians(),
+                                size.width as f32/size.height as f32,
+                                0.1,
+                                100.0
+                            );
+                            unsafe {
+                                self.recreate_swapchain(&window).unwrap();
+                            }
                         }
                         WindowEvent::RedrawRequested => {
                             unsafe {
-                                while let Err(..) = self.draw(current_frame) {
+                                while let Err(..) = self.draw(current_frame, &mvp) {
                                     debug!("Couldn't draw, recreating swapchain");
                                     self.recreate_swapchain(&window).unwrap();
                                     debug!("OK")
@@ -480,6 +550,7 @@ impl DoomApp
                             let fps = 1./elapsed.as_secs_f64();
                             trace!("fps: {}", fps as u16);
                             timestamp = new_timestamp;
+                            mvp.model *= Mat4::from_rotation_z(100.0_f32.to_radians() * elapsed.as_secs_f32());
                             window.request_redraw();
                         },
                         _ => (),
