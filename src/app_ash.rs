@@ -1,5 +1,6 @@
 use glam::*;
 use crate::vulkan_functions::*;
+use ash::vk;
 
 #[repr(C)]
 pub struct Vertex {
@@ -77,7 +78,13 @@ impl DoomApp
                 None,
             )?
         };
-        let surface_info = SurfaceInfo::get_surface_info(&surface_loader, &physical_device, &surface)?;
+
+        let mut surface_info = SurfaceInfo::get_surface_info(&surface_loader, &physical_device, &surface)?;
+        // Fix for wayland
+        surface_info.surface_capabilities.current_extent = vk::Extent2D{
+            width: window.inner_size().width,
+            height: window.inner_size().height
+        };
 
         let queue_family_indices = get_queue_family_indices(&physical_device, &instance, &surface_loader, &surface).expect("No queue family indices found");
 
@@ -108,12 +115,12 @@ impl DoomApp
         }
 
         let mut set_layouts = Vec::new();
-        let uniform_buffers_descriptor_set_layouts = create_descriptor_set_layout(&device)?;
-        set_layouts.push(uniform_buffers_descriptor_set_layouts);
+        //let uniform_buffers_descriptor_set_layouts = create_descriptor_set_layout(&device)?;
+        //set_layouts.push(uniform_buffers_descriptor_set_layouts);
 
         let pipeline_layout = create_pipeline_layout(
             &device,
-            &[],
+            set_layouts.as_slice(),
         )?;
 
         debug!("Creating render pass");
@@ -162,13 +169,8 @@ impl DoomApp
         ) = create_synchronization(&device, MAX_FRAMES)?;
 
         debug!("Creating uniform buffers");
-        let (buffers, memories): (Vec<vk::Buffer>, Vec<vk::DeviceMemory>) = create_uniform_buffers(
-            &instance,
-            &device,
-            physical_device,
-            0
-        )?.into_iter()
-            .unzip();
+        let buffers = Vec::new();
+        let memories = Vec::new();
 
         info!("Initialization done");
         Ok(Self {
@@ -289,7 +291,7 @@ impl DoomApp
 
         self.device
             .queue_submit(self.queues.graphics_queue, &submit_infos, self.queue_submit_complete_fences[current_frame])
-            .context("Error while submitting command buffer to he queue during rendering.")?;
+            .context("Error while submitting command buffer to the queue during rendering.")?;
 
         let wait_semaphores = [self.queue_submit_complete_semaphores[current_frame]];
         let swapchains = [self.swapchain];
@@ -323,7 +325,7 @@ impl DoomApp
         self.swapchain_loader.destroy_swapchain(self.swapchain, None);
     }
 
-    unsafe fn recreate_swapchain(&mut self) -> Result<()>
+    unsafe fn recreate_swapchain(&mut self, window: &Window) -> Result<()>
     {
         self.device.device_wait_idle().unwrap();
 
@@ -335,6 +337,12 @@ impl DoomApp
             &self.physical_device,
             &self.surface
         )?;
+
+        // Fix for wayland
+        self.surface_info.surface_capabilities.current_extent = vk::Extent2D{
+            width: window.inner_size().width,
+            height: window.inner_size().height
+        };
 
         trace!("Creating new swapchain extent");
         self.swapchain_extent = self.surface_info.surface_capabilities.current_extent;
@@ -408,42 +416,18 @@ impl DoomApp
         vertices: &[Vertex]
     ) -> Result<()>
     {
-        let (buffer, buffer_memory) = create_buffer(
+        let (buffer, buffer_memory) = unsafe {create_staged_buffer(
             &self.instance,
             &self.device,
             self.physical_device,
-            vk::BufferUsageFlags::VERTEX_BUFFER,
-            vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
-            (mem::size_of::<Vertex>()* vertices.len()) as u64
-        )?;
-
+            vertices,
+            BufferUsageFlags::VERTEX_BUFFER,
+            self.command_pool,
+            self.queues.graphics_queue,
+        )
+            .context("Failed to create a vertex buffer.")? };
         self.buffers.push(buffer);
         self.memories.push(buffer_memory);
-
-        let memory_requirements = unsafe {
-            self.device.get_buffer_memory_requirements(buffer)
-        };
-
-        unsafe {
-            self.device
-                .bind_buffer_memory(buffer, buffer_memory, 0)
-                .context("Failed to bind the buffer memory to the vertex buffer.")?;
-        }
-
-        let write_ptr = unsafe {
-            self.device
-                .map_memory(
-                    buffer_memory,
-                    0,
-                    memory_requirements.size,
-                    vk::MemoryMapFlags::empty(),
-                )
-                .context("Failed to map the buffer memory.")? as *mut Vertex
-        };
-
-        unsafe { std::ptr::copy(vertices.as_ptr(), write_ptr, vertices.len()) };
-
-        unsafe { self.device.unmap_memory(buffer_memory) };
         self.nb_vertices += vertices.len() as u32;
         Ok(())
     }
@@ -473,13 +457,13 @@ impl DoomApp
                             }
                         },
                         WindowEvent::Resized(..) => unsafe {
-                            self.recreate_swapchain().unwrap();
+                            self.recreate_swapchain(&window).unwrap();
                         }
                         WindowEvent::RedrawRequested => {
                             unsafe {
                                 while let Err(..) = self.draw(current_frame) {
                                     debug!("Couldn't draw, recreating swapchain");
-                                    self.recreate_swapchain().unwrap();
+                                    self.recreate_swapchain(&window).unwrap();
                                     debug!("OK")
                                 }
                             };
@@ -487,7 +471,7 @@ impl DoomApp
                             let new_timestamp = std::time::Instant::now();
                             let elapsed = new_timestamp - timestamp;
                             let fps = 1./elapsed.as_secs_f64();
-                            trace!("{:?}", fps);
+                            trace!("fps: {}", fps as u16);
                             timestamp = new_timestamp;
                             window.request_redraw();
                         },

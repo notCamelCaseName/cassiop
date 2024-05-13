@@ -13,7 +13,7 @@ fn main() -> Result<()> {
     let window = app_ash::DoomApp::init_window(&event_loop);
     let mut app = app_ash::DoomApp::new(&window)?;
 
-    let triangle1 = [
+    let rectangle = [
         Vertex {
             position: [-0.8, -0.8, 0.0],
             color: [1.0, 0.0, 0.0],
@@ -26,9 +26,6 @@ fn main() -> Result<()> {
             position: [-0.8, 0.8, 0.0],
             color: [0.0, 0.0, 1.0],
         },
-    ];
-
-    let triangle2 = [
         Vertex {
             position: [-0.8, -0.8, 0.0],
             color: [1.0, 0.0, 0.0],
@@ -43,8 +40,7 @@ fn main() -> Result<()> {
         },
     ];
 
-    app.load_vertices(&triangle1).unwrap();
-    app.load_vertices(&triangle2).unwrap();
+    app.load_vertices(&rectangle).unwrap();
 
 
     info!("Running");

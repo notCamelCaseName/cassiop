@@ -13,7 +13,7 @@ pub(crate) use {
     ash::{
         ext::debug_utils,
         khr::{get_physical_device_properties2, portability_enumeration, surface, swapchain},
-        vk::{self, ShaderModule},
+        vk::*,
     },
     ash_window,
     log::*,
@@ -40,15 +40,15 @@ pub const WINDOW_HEIGHT: u32 = 600;
 
 pub const MAX_FRAMES: usize = 2;
 
-pub const FILL_COLOR: [vk::ClearValue; 1] = [vk::ClearValue {
-    color: vk::ClearColorValue {
+pub const FILL_COLOR: [ClearValue; 1] = [ClearValue {
+    color: ClearColorValue {
         float32: [0.1, 0.1, 0.1 , 1.0],
     },
 }];
 
 pub struct Queues {
-    pub(crate) graphics_queue: vk::Queue,
-    pub(crate) presentation_queue: vk::Queue
+    pub(crate) graphics_queue: Queue,
+    pub(crate) presentation_queue: Queue
 }
 
 pub struct QueueFamilyIndices {
@@ -63,15 +63,15 @@ impl QueueFamilyIndices {
 }
 
 pub struct SwapchainImage {
-    pub(crate) image: vk::Image,
-    pub(crate) image_view: vk::ImageView
+    pub(crate) image: Image,
+    pub(crate) image_view: ImageView
 }
 pub fn create_instance(entry: Arc<ash::Entry>, window: &Window) -> Result<ash::Instance>
 {
     let app_name = unsafe { CStr::from_bytes_with_nul_unchecked(b"Doom Ash") };
-    let app_info = vk::ApplicationInfo::default()
+    let app_info = ApplicationInfo::default()
         .application_name(app_name)
-        .api_version(vk::API_VERSION_1_3);
+        .api_version(API_VERSION_1_3);
 
     let display_handle = window.display_handle().unwrap();
     let reqs = ash_window::enumerate_required_extensions(display_handle.into())?;
@@ -95,12 +95,12 @@ pub fn create_instance(entry: Arc<ash::Entry>, window: &Window) -> Result<ash::I
 
     let flags = if cfg!(target_os = "macos") {
         info!("Enabling instance create flags for macOS portability.");
-        vk::InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
+        InstanceCreateFlags::ENUMERATE_PORTABILITY_KHR
     } else {
-        vk::InstanceCreateFlags::empty()
+        InstanceCreateFlags::empty()
     };
 
-    let mut create_info = vk::InstanceCreateInfo::default()
+    let mut create_info = InstanceCreateInfo::default()
         .application_info(&app_info)
         .flags(flags)
         .enabled_extension_names(req_vec.as_slice());
@@ -141,7 +141,7 @@ pub unsafe fn validate_required_extensions(
     Ok(())
 }
 
-pub fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevice>
+pub fn pick_physical_device(instance: &ash::Instance) -> Result<PhysicalDevice>
 {
     unsafe {
         Ok(instance
@@ -162,10 +162,10 @@ pub fn pick_physical_device(instance: &ash::Instance) -> Result<vk::PhysicalDevi
 }
 
 pub fn get_queue_family_indices(
-    device: &vk::PhysicalDevice,
+    device: &PhysicalDevice,
     instance: &ash::Instance,
     surface_loader: &surface::Instance,
-    surface: &vk::SurfaceKHR
+    surface: &SurfaceKHR
 ) -> Option<QueueFamilyIndices>
 {
     let queue_family_properties = unsafe {
@@ -178,7 +178,7 @@ pub fn get_queue_family_indices(
         .iter()
         .enumerate()
         .for_each(|(i, props)| {
-            if props.queue_count > 0 && props.queue_flags.contains(vk::QueueFlags::GRAPHICS) {
+            if props.queue_count > 0 && props.queue_flags.contains(QueueFlags::GRAPHICS) {
                 queue_family_indices.graphics_family = Some(i as u32);
             }
 
@@ -200,7 +200,7 @@ pub fn get_queue_family_indices(
 pub fn create_logical_device(
     instance: &ash::Instance,
     queue_family_indices: &QueueFamilyIndices,
-    physical_device: &vk::PhysicalDevice,
+    physical_device: &PhysicalDevice,
 ) -> (Queues, Device)
 {
 
@@ -213,13 +213,13 @@ pub fn create_logical_device(
     let queue_create_infos = indices
         .iter()
         .map(|i| {
-            vk::DeviceQueueCreateInfo::default()
+            DeviceQueueCreateInfo::default()
                 .queue_family_index(*i)
                 .queue_priorities(&[1.])
         })
         .collect::<Vec<_>>();
 
-    let create_info = vk::DeviceCreateInfo::default()
+    let create_info = DeviceCreateInfo::default()
         .queue_create_infos(&queue_create_infos)
         .enabled_extension_names(required_device_extension_names());
 
@@ -238,7 +238,7 @@ pub fn create_logical_device(
 
 pub fn check_device_extension_support(
     instance: &ash::Instance,
-    device: &vk::PhysicalDevice,
+    device: &PhysicalDevice,
 ) -> bool
 {
     let extensions: HashSet<_> = unsafe {
@@ -262,11 +262,11 @@ pub fn check_device_extension_support(
 
 pub fn create_swapchain(
     swapchain_loader: &swapchain::Device,
-    surface: &vk::SurfaceKHR,
+    surface: &SurfaceKHR,
     surface_info: &SurfaceInfo,
     queue_family_indices: &QueueFamilyIndices,
-    swapchain_extent: &vk::Extent2D,
-) -> Result<vk::SwapchainKHR>
+    swapchain_extent: &Extent2D,
+) -> Result<SwapchainKHR>
 {
     let min_image_count = {
         let max_image_count = surface_info.surface_capabilities.max_image_count;
@@ -284,16 +284,16 @@ pub fn create_swapchain(
     let current_transform = surface_info.surface_capabilities.current_transform;
     let best_format = surface_info.choose_best_color_format()?;
 
-    let create_info = vk::SwapchainCreateInfoKHR::default()
+    let create_info = SwapchainCreateInfoKHR::default()
         .surface(*surface)
         .min_image_count(min_image_count)
         .image_format(best_format.format)
         .image_color_space(best_format.color_space)
         .image_extent(*swapchain_extent)
         .image_array_layers(1)
-        .image_usage(vk::ImageUsageFlags::COLOR_ATTACHMENT)
+        .image_usage(ImageUsageFlags::COLOR_ATTACHMENT)
         .pre_transform(current_transform)
-        .composite_alpha(vk::CompositeAlphaFlagsKHR::OPAQUE)
+        .composite_alpha(CompositeAlphaFlagsKHR::OPAQUE)
         .present_mode(surface_info.choose_best_pres_mode()?)
         .clipped(true);
 
@@ -304,10 +304,10 @@ pub fn create_swapchain(
     ];
 
     let create_info = if is_concurrent {
-        create_info.image_sharing_mode(vk::SharingMode::CONCURRENT)
+        create_info.image_sharing_mode(SharingMode::CONCURRENT)
             .queue_family_indices(&queue_family_indices_slice)
     } else {
-        create_info.image_sharing_mode(vk::SharingMode::EXCLUSIVE)
+        create_info.image_sharing_mode(SharingMode::EXCLUSIVE)
     };
 
     unsafe {
@@ -318,27 +318,27 @@ pub fn create_swapchain(
 }
 
 pub fn create_image_view(
-    image: &vk::Image,
-    format: &vk::Format,
-    img_aspect_flags: vk::ImageAspectFlags,
+    image: &Image,
+    format: &Format,
+    img_aspect_flags: ImageAspectFlags,
     device: &Device,
-) -> Result<vk::ImageView>
+) -> Result<ImageView>
 {
-    let component_mapping_builder = vk::ComponentMapping::default()
-        .r(vk::ComponentSwizzle::IDENTITY)
-        .g(vk::ComponentSwizzle::IDENTITY)
-        .b(vk::ComponentSwizzle::IDENTITY)
-        .a(vk::ComponentSwizzle::IDENTITY);
-    let img_subresource_range_builder = vk::ImageSubresourceRange::default()
+    let component_mapping_builder = ComponentMapping::default()
+        .r(ComponentSwizzle::IDENTITY)
+        .g(ComponentSwizzle::IDENTITY)
+        .b(ComponentSwizzle::IDENTITY)
+        .a(ComponentSwizzle::IDENTITY);
+    let img_subresource_range_builder = ImageSubresourceRange::default()
         .aspect_mask(img_aspect_flags)
         .base_mip_level(0)
         .level_count(1)
         .base_array_layer(0)
         .layer_count(1);
 
-    let create_info = vk::ImageViewCreateInfo::default()
+    let create_info = ImageViewCreateInfo::default()
         .image(*image)
-        .view_type(vk::ImageViewType::TYPE_2D)
+        .view_type(ImageViewType::TYPE_2D)
         .format(*format)
         .components(component_mapping_builder)
         .subresource_range(img_subresource_range_builder);
@@ -350,8 +350,8 @@ pub fn create_image_view(
 
 pub fn get_swapchain_images(
     swapchain_loader: &swapchain::Device,
-    swapchain: &vk::SwapchainKHR,
-    format: &vk::Format,
+    swapchain: &SwapchainKHR,
+    format: &Format,
     device: &Device,
 ) -> Result<Vec<SwapchainImage>>
 {
@@ -361,7 +361,7 @@ pub fn get_swapchain_images(
     let swapchain_images_output = swapchain_images
         .iter()
         .map(|&image| {
-            let image_view = create_image_view(&image, format, vk::ImageAspectFlags::COLOR, device)?;
+            let image_view = create_image_view(&image, format, ImageAspectFlags::COLOR, device)?;
             Ok::<SwapchainImage, anyhow::Error>(SwapchainImage {image, image_view})
         })
         .collect::<Result<Vec<_>>>()?;
@@ -370,12 +370,12 @@ pub fn get_swapchain_images(
 
 pub fn create_pipeline_layout(
     device: &Device,
-    set_layouts: &[vk::DescriptorSetLayout],
-) -> Result<vk::PipelineLayout>
+    set_layouts: &[DescriptorSetLayout],
+) -> Result<PipelineLayout>
 {
     unsafe {
         device.create_pipeline_layout(
-            &vk::PipelineLayoutCreateInfo::default()
+            &PipelineLayoutCreateInfo::default()
                 .set_layouts(set_layouts)
                 .push_constant_ranges(&[]),
             None,
@@ -386,35 +386,35 @@ pub fn create_pipeline_layout(
 pub fn create_render_passe(
     device: &Device,
     surface_info: &SurfaceInfo,
-) -> VkResult<vk::RenderPass>
+) -> VkResult<RenderPass>
 {
-    let attachment_descriptions = [vk::AttachmentDescription::default()
+    let attachment_descriptions = [AttachmentDescription::default()
         .format(surface_info.choose_best_color_format().unwrap().format)
-        .samples(vk::SampleCountFlags::TYPE_1)
-        .load_op(vk::AttachmentLoadOp::CLEAR)
-        .store_op(vk::AttachmentStoreOp::STORE)
-        .stencil_load_op(vk::AttachmentLoadOp::DONT_CARE)
-        .stencil_store_op(vk::AttachmentStoreOp::DONT_CARE)
-        .initial_layout(vk::ImageLayout::UNDEFINED)
-        .final_layout(vk::ImageLayout::PRESENT_SRC_KHR)];
+        .samples(SampleCountFlags::TYPE_1)
+        .load_op(AttachmentLoadOp::CLEAR)
+        .store_op(AttachmentStoreOp::STORE)
+        .stencil_load_op(AttachmentLoadOp::DONT_CARE)
+        .stencil_store_op(AttachmentStoreOp::DONT_CARE)
+        .initial_layout(ImageLayout::UNDEFINED)
+        .final_layout(ImageLayout::PRESENT_SRC_KHR)];
 
-    let attachment_references = [vk::AttachmentReference::default()
+    let attachment_references = [AttachmentReference::default()
         .attachment(0)
-        .layout(vk::ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
-    let subpass_descriptions = [vk::SubpassDescription::default()
-        .pipeline_bind_point(vk::PipelineBindPoint::GRAPHICS)
+        .layout(ImageLayout::COLOR_ATTACHMENT_OPTIMAL)];
+    let subpass_descriptions = [SubpassDescription::default()
+        .pipeline_bind_point(PipelineBindPoint::GRAPHICS)
         .color_attachments(&attachment_references)];
 
-    let subpass_dependencies = [vk::SubpassDependency::default()
-        .src_subpass(vk::SUBPASS_EXTERNAL)
+    let subpass_dependencies = [SubpassDependency::default()
+        .src_subpass(SUBPASS_EXTERNAL)
         .dst_subpass(0)
-        .src_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-        .dst_stage_mask(vk::PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
-        .src_access_mask(vk::AccessFlags::empty())
-        .dst_access_mask(vk::AccessFlags::COLOR_ATTACHMENT_WRITE)];
+        .src_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .dst_stage_mask(PipelineStageFlags::COLOR_ATTACHMENT_OUTPUT)
+        .src_access_mask(AccessFlags::empty())
+        .dst_access_mask(AccessFlags::COLOR_ATTACHMENT_WRITE)];
 
     unsafe {device.create_render_pass(
-        &vk::RenderPassCreateInfo::default()
+        &RenderPassCreateInfo::default()
             .attachments(&attachment_descriptions)
             .subpasses(&subpass_descriptions)
             .dependencies(&subpass_dependencies),
@@ -425,81 +425,81 @@ pub fn create_render_passe(
 pub fn create_graphics_pipeline(
     vertex_shader: ShaderModule,
     fragment_shader: ShaderModule,
-    swapchain_extents: vk::Extent2D,
-    pipeline_layout: vk::PipelineLayout,
-    render_pass: vk::RenderPass,
+    swapchain_extents: Extent2D,
+    pipeline_layout: PipelineLayout,
+    render_pass: RenderPass,
     device: &Device,
-) -> Result<vk::Pipeline>
+) -> Result<Pipeline>
 {
     let name = unsafe { CStr::from_bytes_with_nul_unchecked(b"main\0") };
     let shader_stages = [
-        vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::VERTEX)
+        PipelineShaderStageCreateInfo::default()
+            .stage(ShaderStageFlags::VERTEX)
             .module(vertex_shader)
             .name(name),
-        vk::PipelineShaderStageCreateInfo::default()
-            .stage(vk::ShaderStageFlags::FRAGMENT)
+        PipelineShaderStageCreateInfo::default()
+            .stage(ShaderStageFlags::FRAGMENT)
             .module(fragment_shader)
             .name(name),
     ];
 
-    let binding_descriptions = [vk::VertexInputBindingDescription::default()
+    let binding_descriptions = [VertexInputBindingDescription::default()
         .stride(mem::size_of::<Vertex>().try_into().unwrap())
-        .input_rate(vk::VertexInputRate::VERTEX)
+        .input_rate(VertexInputRate::VERTEX)
     ];
 
     let attribute_descriptions = [
-        vk::VertexInputAttributeDescription::default()
-            .format(vk::Format::R32G32B32_SFLOAT),
-        vk::VertexInputAttributeDescription::default()
+        VertexInputAttributeDescription::default()
+            .format(Format::R32G32B32_SFLOAT),
+        VertexInputAttributeDescription::default()
             .location(1)
-            .format(vk::Format::R32G32B32_SFLOAT)
+            .format(Format::R32G32B32_SFLOAT)
             .offset(12)
     ];
 
-    let vertex_input = vk::PipelineVertexInputStateCreateInfo::default()
+    let vertex_input = PipelineVertexInputStateCreateInfo::default()
         .vertex_binding_descriptions(&binding_descriptions)
         .vertex_attribute_descriptions(&attribute_descriptions);
 
-    let input_assembly = vk::PipelineInputAssemblyStateCreateInfo::default()
-        .topology(vk::PrimitiveTopology::TRIANGLE_LIST)
+    let input_assembly = PipelineInputAssemblyStateCreateInfo::default()
+        .topology(PrimitiveTopology::TRIANGLE_LIST)
         .primitive_restart_enable(false);
 
-    let viewports = [vk::Viewport {
+    let viewports = [Viewport {
         width: swapchain_extents.width as f32,
         height: swapchain_extents.height as f32,
         max_depth: 1.0,
-        ..vk::Viewport::default()
+        ..Viewport::default()
     }];
-    let scissors = [vk::Rect2D {
+    let scissors = [Rect2D {
         extent: swapchain_extents,
-        ..vk::Rect2D::default()
+        ..Rect2D::default()
     }];
-    let viewport_state = vk::PipelineViewportStateCreateInfo::default()
+    let viewport_state = PipelineViewportStateCreateInfo::default()
         .viewports(&viewports)
         .scissors(&scissors);
 
-    let rasterization_state = vk::PipelineRasterizationStateCreateInfo::default()
-        .polygon_mode(vk::PolygonMode::FILL)
-        .cull_mode(vk::CullModeFlags::BACK)
-        .front_face(vk::FrontFace::CLOCKWISE)
+    let rasterization_state = PipelineRasterizationStateCreateInfo::default()
+        .polygon_mode(PolygonMode::FILL)
+        .cull_mode(CullModeFlags::BACK)
+        .front_face(FrontFace::CLOCKWISE)
         .line_width(1.0);
 
-    let multisample = vk::PipelineMultisampleStateCreateInfo::default()
-        .rasterization_samples(vk::SampleCountFlags::TYPE_1);
+    let multisample = PipelineMultisampleStateCreateInfo::default()
+        .rasterization_samples(SampleCountFlags::TYPE_1);
 
-    let color_blend_attachments = [vk::PipelineColorBlendAttachmentState::default()
+    let color_blend_attachments = [PipelineColorBlendAttachmentState::default()
         .blend_enable(true)
-        .color_write_mask(vk::ColorComponentFlags::RGBA)
-        .src_color_blend_factor(vk::BlendFactor::SRC_ALPHA)
-        .dst_color_blend_factor(vk::BlendFactor::ONE_MINUS_SRC_ALPHA)
-        .color_blend_op(vk::BlendOp::ADD)
-        .src_alpha_blend_factor(vk::BlendFactor::ONE)
-        .dst_alpha_blend_factor(vk::BlendFactor::ZERO)
-        .alpha_blend_op(vk::BlendOp::ADD)];
+        .color_write_mask(ColorComponentFlags::RGBA)
+        .src_color_blend_factor(BlendFactor::SRC_ALPHA)
+        .dst_color_blend_factor(BlendFactor::ONE_MINUS_SRC_ALPHA)
+        .color_blend_op(BlendOp::ADD)
+        .src_alpha_blend_factor(BlendFactor::ONE)
+        .dst_alpha_blend_factor(BlendFactor::ZERO)
+        .alpha_blend_op(BlendOp::ADD)];
     let color_blend =
-        vk::PipelineColorBlendStateCreateInfo::default().attachments(&color_blend_attachments);
-    let graphics_pipeline_create_infos = [vk::GraphicsPipelineCreateInfo::default()
+        PipelineColorBlendStateCreateInfo::default().attachments(&color_blend_attachments);
+    let graphics_pipeline_create_infos = [GraphicsPipelineCreateInfo::default()
         .stages(&shader_stages)
         .vertex_input_state(&vertex_input)
         .input_assembly_state(&input_assembly)
@@ -512,7 +512,7 @@ pub fn create_graphics_pipeline(
         .subpass(0)];
     unsafe {
         let pipelines = device
-            .create_graphics_pipelines(vk::PipelineCache::null(), &graphics_pipeline_create_infos, None)
+            .create_graphics_pipelines(PipelineCache::null(), &graphics_pipeline_create_infos, None)
             .map_err(|(_, e)| e)?;
         Ok(pipelines[0])
     }
@@ -520,16 +520,16 @@ pub fn create_graphics_pipeline(
 
 pub fn create_framebuffer(
     device: &Device,
-    render_pass: vk::RenderPass,
-    image_view: vk::ImageView,
-    swapchain_extent: vk::Extent2D,
-) -> Result<vk::Framebuffer>
+    render_pass: RenderPass,
+    image_view: ImageView,
+    swapchain_extent: Extent2D,
+) -> Result<Framebuffer>
 {
     let attachments = [image_view];
     unsafe {
         device
             .create_framebuffer(
-                &vk::FramebufferCreateInfo::default()
+                &FramebufferCreateInfo::default()
                     .render_pass(render_pass)
                     .attachments(&attachments)
                     .width(swapchain_extent.width)
@@ -541,12 +541,12 @@ pub fn create_framebuffer(
     }
 }
 
-pub fn create_command_pool(device: &Device, queue_family_index: u32) -> Result<vk::CommandPool>
+pub fn create_command_pool(device: &Device, queue_family_index: u32) -> Result<CommandPool>
 {
     unsafe {
         device
             .create_command_pool(
-                &vk::CommandPoolCreateInfo::default().queue_family_index(queue_family_index),
+                &CommandPoolCreateInfo::default().queue_family_index(queue_family_index),
                 None,
             )
             .context("Failed to create a command pool.")
@@ -555,16 +555,16 @@ pub fn create_command_pool(device: &Device, queue_family_index: u32) -> Result<v
 
 pub fn allocate_command_buffers(
     device: &Device,
-    command_pool: vk::CommandPool,
+    command_pool: CommandPool,
     buffer_count: u32,
-) -> Result<Vec<vk::CommandBuffer>>
+) -> Result<Vec<CommandBuffer>>
 {
     unsafe {
         device
             .allocate_command_buffers(
-                &vk::CommandBufferAllocateInfo::default()
+                &CommandBufferAllocateInfo::default()
                     .command_pool(command_pool)
-                    .level(vk::CommandBufferLevel::PRIMARY)
+                    .level(CommandBufferLevel::PRIMARY)
                     .command_buffer_count(buffer_count),
             )
             .context("Failed to allocate command buffers.")
@@ -574,10 +574,10 @@ pub fn allocate_command_buffers(
 pub fn create_synchronization(
     device: &Device,
     amount: usize,
-) -> Result<(Vec<vk::Semaphore>, Vec<vk::Semaphore>, Vec<vk::Fence>)>
+) -> Result<(Vec<Semaphore>, Vec<Semaphore>, Vec<Fence>)>
 {
-    let semaphore_builder = vk::SemaphoreCreateInfo::default();
-    let fence_builder = vk::FenceCreateInfo::default().flags(vk::FenceCreateFlags::SIGNALED);
+    let semaphore_builder = SemaphoreCreateInfo::default();
+    let fence_builder = FenceCreateInfo::default().flags(FenceCreateFlags::SIGNALED);
 
     let image_available_semaphores = (0..amount)
         .map(|_| unsafe {
@@ -611,9 +611,9 @@ pub fn create_synchronization(
 }
 
 pub fn find_valid_memory_type_index(
-    memory_properties: vk::PhysicalDeviceMemoryProperties,
-    memory_requirements: vk::MemoryRequirements,
-    flags: vk::MemoryPropertyFlags,
+    memory_properties: PhysicalDeviceMemoryProperties,
+    memory_requirements: MemoryRequirements,
+    flags: MemoryPropertyFlags,
 ) -> Option<usize>
 {
     memory_properties
@@ -629,19 +629,19 @@ pub fn find_valid_memory_type_index(
 pub fn create_buffer(
     instance: &ash::Instance,
     device: &Device,
-    physical_device: vk::PhysicalDevice,
-    usage: vk::BufferUsageFlags,
-    memory_property_flags: vk::MemoryPropertyFlags,
-    size: vk::DeviceSize,
-) -> Result<(vk::Buffer, vk::DeviceMemory)>
+    physical_device: PhysicalDevice,
+    usage: BufferUsageFlags,
+    memory_property_flags: MemoryPropertyFlags,
+    size: DeviceSize,
+) -> Result<(Buffer, DeviceMemory)>
 {
     unsafe {
         // create a buffer handle of the right size and type.
         let buffer = device.create_buffer(
-            &vk::BufferCreateInfo::default()
+            &BufferCreateInfo::default()
                 .size(size)
                 .usage(usage)
-                .sharing_mode(vk::SharingMode::EXCLUSIVE),
+                .sharing_mode(SharingMode::EXCLUSIVE),
             None,
         )?;
 
@@ -660,7 +660,7 @@ pub fn create_buffer(
         // allocate memory.
         let buffer_memory = device
             .allocate_memory(
-                &vk::MemoryAllocateInfo::default()
+                &MemoryAllocateInfo::default()
                     .allocation_size(memory_requirements.size)
                     .memory_type_index(memory_type_index as u32),
                 None,
@@ -673,21 +673,105 @@ pub fn create_buffer(
             .context("Failed to bind buffer memory to the buffer.")?;
 
         // return.
-        Ok::<(vk::Buffer, vk::DeviceMemory), Error>((buffer, buffer_memory))
+        Ok::<(Buffer, DeviceMemory), Error>((buffer, buffer_memory))
     }
         .context("Error when trying to create a buffer of some type.")
 }
 
-pub fn create_descriptor_set_layout(device: &Device) -> Result<vk::DescriptorSetLayout>
+pub unsafe fn create_staged_buffer<T>(
+    instance: &ash::Instance,
+    device: &Device,
+    physical_device: PhysicalDevice,
+    elements: &[T],
+    usage: BufferUsageFlags,
+    transfer_command_pool: CommandPool,
+    transfer_queue: Queue,
+) -> Result<(Buffer, DeviceMemory)>
+{
+    let size = (mem::size_of::<T>() * elements.len()) as DeviceSize;
+
+    let (staging_buffer, staging_buffer_memory) = create_buffer(
+        instance,
+        device,
+        physical_device,
+        usage | BufferUsageFlags::TRANSFER_SRC,
+        MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
+        size,
+    )
+        .context("Failed to create staging buffer.")?;
+
+    let (gpu_buffer, gpu_buffer_memory) = create_buffer(
+        instance,
+        device,
+        physical_device,
+        usage | BufferUsageFlags::TRANSFER_DST,
+        MemoryPropertyFlags::DEVICE_LOCAL,
+        size,
+    )
+        .context("Failed to create GPU buffer.")?;
+
+    let write_ptr = device
+        .map_memory(staging_buffer_memory, 0, size, MemoryMapFlags::empty())
+        .context("Failed to map the staging buffer memory.")? as *mut T;
+    std::ptr::copy_nonoverlapping(elements.as_ptr(), write_ptr, elements.len());
+    device.unmap_memory(staging_buffer_memory);
+
+    let command_buffer = device
+        .allocate_command_buffers(
+            &CommandBufferAllocateInfo::default()
+                .command_pool(transfer_command_pool)
+                .level(CommandBufferLevel::PRIMARY)
+                .command_buffer_count(1),
+        )
+        .context("Failed to allocate a staging transfer command buffer.")?[0];
+
+    device
+        .begin_command_buffer(
+            command_buffer,
+            &CommandBufferBeginInfo::default().flags(CommandBufferUsageFlags::ONE_TIME_SUBMIT),
+        )
+        .context("Failed to begin recording the command buffer.")?;
+
+    device.cmd_copy_buffer(
+        command_buffer,
+        staging_buffer,
+        gpu_buffer,
+        &[BufferCopy::default().size(size)],
+    );
+
+    device
+        .end_command_buffer(command_buffer)
+        .context("Failed to end recording the command buffer.")?;
+
+    // submit the copy operation to the transfer queue.
+    let command_buffers = [command_buffer];
+    let submit_infos = [SubmitInfo::default().command_buffers(&command_buffers)];
+    device
+        .queue_submit(transfer_queue, &submit_infos, Fence::null())
+        .context("Failed to submit the command buffer to the queue.")?;
+
+// block the thread until the copy operation is finished.
+    device
+        .queue_wait_idle(transfer_queue)
+        .context("Failed to wait for the transfer to finish.")?;
+
+    device.free_command_buffers(transfer_command_pool, &[command_buffer]);
+    device.free_memory(staging_buffer_memory, None);
+    device.destroy_buffer(staging_buffer, None);
+
+    Ok((gpu_buffer, gpu_buffer_memory))
+}
+
+pub fn create_descriptor_set_layout(device: &Device) -> Result<DescriptorSetLayout>
 {
     unsafe {
         device
             .create_descriptor_set_layout(
-                &vk::DescriptorSetLayoutCreateInfo::default().bindings(&[
-                    vk::DescriptorSetLayoutBinding::default()
-                        .descriptor_type(vk::DescriptorType::UNIFORM_BUFFER)
+                &DescriptorSetLayoutCreateInfo::default().bindings(&[
+                    DescriptorSetLayoutBinding::default()
+                        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                         .descriptor_count(1)
-                        .stage_flags(vk::ShaderStageFlags::VERTEX),
+                        .stage_flags(ShaderStageFlags::VERTEX),
                 ]),
                 None,
             )
@@ -698,9 +782,9 @@ pub fn create_descriptor_set_layout(device: &Device) -> Result<vk::DescriptorSet
 pub fn create_uniform_buffers(
     instance: &ash::Instance,
     device: &Device,
-    physical_device: vk::PhysicalDevice,
+    physical_device: PhysicalDevice,
     count: usize,
-) -> Result<Vec<(vk::Buffer, vk::DeviceMemory)>>
+) -> Result<Vec<(Buffer, DeviceMemory)>>
 {
     let mut buffers = Vec::with_capacity(count);
     for _ in 0..count {
@@ -709,8 +793,8 @@ pub fn create_uniform_buffers(
                 instance,
                 device,
                 physical_device,
-                vk::BufferUsageFlags::UNIFORM_BUFFER,
-                vk::MemoryPropertyFlags::HOST_VISIBLE | vk::MemoryPropertyFlags::HOST_COHERENT,
+                BufferUsageFlags::UNIFORM_BUFFER,
+                MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
                 mem::size_of::<crate::app_ash::ModelViewProjection>().try_into().unwrap(),
             )
                 .context("Failed to create a uniform buffer.")?,
@@ -719,15 +803,15 @@ pub fn create_uniform_buffers(
     Ok(buffers)
 }
 
-pub fn create_descriptor_pool(device: &Device, count: u32) -> Result<vk::DescriptorPool>
+pub fn create_descriptor_pool(device: &Device, count: u32) -> Result<DescriptorPool>
 {
     unsafe {
         device
             .create_descriptor_pool(
-                &vk::DescriptorPoolCreateInfo::default()
+                &DescriptorPoolCreateInfo::default()
                     .max_sets(count)
-                    .pool_sizes(&[vk::DescriptorPoolSize::default()
-                        .ty(vk::DescriptorType::UNIFORM_BUFFER)
+                    .pool_sizes(&[DescriptorPoolSize::default()
+                        .ty(DescriptorType::UNIFORM_BUFFER)
                         .descriptor_count(count)]),
                 None,
             )
@@ -737,17 +821,17 @@ pub fn create_descriptor_pool(device: &Device, count: u32) -> Result<vk::Descrip
 
 pub fn allocate_descriptor_sets(
     device: &Device,
-    descriptor_pool: vk::DescriptorPool,
-    descriptor_set_layout: vk::DescriptorSetLayout,
+    descriptor_pool: DescriptorPool,
+    descriptor_set_layout: DescriptorSetLayout,
     count: usize,
-) -> Result<Vec<vk::DescriptorSet>> {
+) -> Result<Vec<DescriptorSet>> {
     let layouts = std::iter::repeat(descriptor_set_layout)
         .take(count)
         .collect::<Vec<_>>();
     unsafe {
         device
             .allocate_descriptor_sets(
-                &vk::DescriptorSetAllocateInfo::default()
+                &DescriptorSetAllocateInfo::default()
                     .descriptor_pool(descriptor_pool)
                     .set_layouts(&layouts),
             )
