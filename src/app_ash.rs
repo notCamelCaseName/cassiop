@@ -41,6 +41,7 @@ pub struct DoomApp
     swapchain_extent: vk::Extent2D,
     shader_modules: HashMap<String, ShaderModule>,
     render_pass: vk::RenderPass,
+    descriptor_pool: DescriptorPool,
     set_layouts: Vec<vk::DescriptorSetLayout>,
     descriptor_sets: Vec<DescriptorSet>,
     pipeline_layout: vk::PipelineLayout,
@@ -213,6 +214,7 @@ impl DoomApp
             swapchain_extent,
             shader_modules,
             render_pass,
+            descriptor_pool,
             set_layouts,
             descriptor_sets,
             pipeline_layout,
@@ -573,6 +575,14 @@ impl Drop for DoomApp
                 self.device.free_memory(mesh.vertex_buffer_memory, None);
                 self.device.destroy_buffer(mesh.vertex_buffer, None);
             }
+            for (buffer, buffer_memory) in &self.uniform_buffers {
+                self.device.free_memory(*buffer_memory, None);
+                self.device.destroy_buffer(*buffer, None);
+            }
+            for descriptor_set_layout in &self.set_layouts {
+                self.device.destroy_descriptor_set_layout(*descriptor_set_layout, None);
+            }
+            self.device.destroy_descriptor_pool(self.descriptor_pool, None);
             for semaphore in &self.image_available_semaphores {
                 self.device.destroy_semaphore(*semaphore, None);
             }
