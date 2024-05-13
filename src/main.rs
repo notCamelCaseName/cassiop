@@ -3,6 +3,7 @@ mod surface_info;
 mod utility;
 mod debug;
 mod vulkan_functions;
+mod wad;
 
 use {anyhow::Result, log::info, winit::event_loop::EventLoop};
 use app_ash::Vertex;
