@@ -338,7 +338,7 @@ impl DoomApp
             )
             .context("Failed to map uniform buffer memory.")?
             as *mut ModelViewProjection;
-        let src = std::ptr::from_ref(mvp);
+        let src = mvp as *const ModelViewProjection;
         std::ptr::copy_nonoverlapping(src, dst, 1);
         self.device.unmap_memory(uniform_memory);
 
