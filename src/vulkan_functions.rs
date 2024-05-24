@@ -32,6 +32,7 @@ pub(crate) use {
     },
 };
 pub use crate::app_ash::{Vertex, Mesh};
+use crate::app_ash::ModelViewProjection;
 pub use crate::utility::create_shader_module;
 
 pub const WINDOW_TITLE: &str = "DoomApp";
@@ -769,7 +770,8 @@ unsafe fn create_vertex_buffer(
     vertices: &[Vertex],
     transfer_command_pool: CommandPool,
     transfer_queue: Queue,
-) -> Result<(Buffer, DeviceMemory)> {
+) -> Result<(Buffer, DeviceMemory)>
+{
     create_staged_buffer(
         instance,
         device,
@@ -789,7 +791,8 @@ pub unsafe fn create_index_buffer(
     indices: &[u16],
     transfer_command_pool: CommandPool,
     transfer_queue: Queue,
-) -> Result<(Buffer, DeviceMemory)> {
+) -> Result<(Buffer, DeviceMemory)>
+{
     create_staged_buffer(
         instance,
         device,
@@ -824,8 +827,7 @@ pub fn create_uniform_buffers(
     device: &Device,
     physical_device: PhysicalDevice,
     count: usize,
-) -> Result<Vec<(Buffer, DeviceMemory)>>
-{
+) -> Result<Vec<(Buffer, DeviceMemory)>> {
     let mut buffers = Vec::with_capacity(count);
     for _ in 0..count {
         buffers.push(
@@ -835,7 +837,7 @@ pub fn create_uniform_buffers(
                 physical_device,
                 BufferUsageFlags::UNIFORM_BUFFER,
                 MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-                mem::size_of::<crate::app_ash::ModelViewProjection>().try_into().unwrap(),
+                mem::size_of::<ModelViewProjection>().try_into().unwrap(),
             )
                 .context("Failed to create a uniform buffer.")?,
         );
@@ -864,7 +866,8 @@ pub fn allocate_descriptor_sets(
     descriptor_pool: DescriptorPool,
     descriptor_set_layout: DescriptorSetLayout,
     count: usize,
-) -> Result<Vec<DescriptorSet>> {
+) -> Result<Vec<DescriptorSet>>
+{
     let layouts = std::iter::repeat(descriptor_set_layout)
         .take(count)
         .collect::<Vec<_>>();
@@ -879,6 +882,36 @@ pub fn allocate_descriptor_sets(
     }
 }
 
+pub fn update_descriptor_sets(
+    device: &Device,
+    buffers: &[(Buffer, DeviceMemory)],
+    sets: &[DescriptorSet],
+)
+{
+    let buffer_infos = buffers
+        .iter()
+        .map(|(buffer, _)| {
+            vec![DescriptorBufferInfo::default()
+                .buffer(*buffer)
+                .range(mem::size_of::<ModelViewProjection>().try_into().unwrap())]
+        })
+        .collect::<Vec<_>>();
+
+    let writes = buffer_infos
+        .iter()
+        .zip(sets)
+        .map(|(buffer_info, set)| {
+            WriteDescriptorSet::default()
+                .dst_set(*set)
+                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(buffer_info)
+        }).collect::<Vec<_>>();
+
+    unsafe {
+        device.update_descriptor_sets(&writes, &[]);
+    }
+}
+
 pub unsafe fn create_mesh(
     instance: &ash::Instance,
     device: &Device,
@@ -887,7 +920,8 @@ pub unsafe fn create_mesh(
     transfer_queue: Queue,
     vertex_buffer_data: &[Vertex],
     index_buffer_data: &[u16],
-) -> Result<Mesh> {
+) -> Result<Mesh>
+{
     let (vertex_buffer, vertex_buffer_memory) = create_vertex_buffer(
         instance,
         device,
