@@ -19,6 +19,11 @@ pub fn rusticized_required_device_extension_names() -> Vec<String> {
     vec![String::from(swapchain::NAME.to_str().unwrap())]
 }
 
+#[cfg(all(windows))]
+pub fn rusticized_required_device_extension_names() -> Vec<String> {
+    vec![String::from(swapchain::NAME.to_str().unwrap())]
+}
+
 #[cfg(target_os = "macos")]
 pub fn required_device_extension_names() -> &'static [* const i8] {
     const EXT: [*const i8; 2] = [
@@ -29,6 +34,14 @@ pub fn required_device_extension_names() -> &'static [* const i8] {
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
+pub fn required_device_extension_names() -> &'static [* const i8] {
+    const EXT: [*const i8; 1] = [
+        swapchain::NAME.as_ptr()
+    ];
+    &EXT
+}
+
+#[cfg(all(windows))]
 pub fn required_device_extension_names() -> &'static [* const i8] {
     const EXT: [*const i8; 1] = [
         swapchain::NAME.as_ptr()
