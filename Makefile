@@ -18,13 +18,13 @@ vert-shaders: shaders/*.vert
 	done
 
 run: shaders main
-	WAYLAND_DISPLAY="" cargo run
+	cargo run
 
 release: shaders main-release
-	WAYLAND_DISPLAY="" cargo run --release
+	cargo run --release
 
 debug: shaders main
-	WAYLAND_DISPLAY="" RUST_LOG=cassiop=trace cargo run
+	RUST_LOG=cassiop=trace cargo run
 
 clean: shaders/*.spv
 	cargo clean

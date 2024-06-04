@@ -2,6 +2,9 @@ use glam::*;
 use crate::vulkan_functions::*;
 use ash::vk;
 
+const FRAMERATE: u64 = 60;
+const TO_WAIT: std::time::Duration = std::time::Duration::from_nanos(1_000_000_000/FRAMERATE);
+
 #[repr(C)]
 pub struct Vertex {
     pub position: [f32; 3], // offset 0
@@ -501,9 +504,9 @@ impl DoomApp
         let mut mvp = ModelViewProjection {
             model: Mat4::IDENTITY,
             view: Mat4::look_at_rh(
-                Vec3::new(0.0, 0.0, 2.0),
+                Vec3::new(2.0, 2.0, 2.0),
                 Vec3::new(0.0, 0.0, 0.0),
-                Vec3::new(0.0, 1.0, 0.0),
+                Vec3::new(0.0, -1.0, 0.0),
             ),
             projection: Mat4::perspective_rh(45.0_f32.to_radians(), WINDOW_WIDTH as f32/WINDOW_HEIGHT as f32, 0.1, 100.0),
         };
@@ -549,10 +552,15 @@ impl DoomApp
                             current_frame = (current_frame + 1) % max_frames;
                             let new_timestamp = std::time::Instant::now();
                             let elapsed = new_timestamp - timestamp;
+                            if (TO_WAIT > elapsed) {
+                                std::thread::sleep(TO_WAIT - elapsed);
+                            }
+                            let new_timestamp = std::time::Instant::now();
+                            let elapsed = new_timestamp - timestamp;
                             let fps = 1./elapsed.as_secs_f64();
                             trace!("fps: {}", fps as u16);
+                            mvp.model *= Mat4::from_rotation_y(100.0_f32.to_radians() * elapsed.as_secs_f32());
                             timestamp = new_timestamp;
-                            mvp.model *= Mat4::from_rotation_z(100.0_f32.to_radians() * elapsed.as_secs_f32());
                             window.request_redraw();
                         },
                         _ => (),
