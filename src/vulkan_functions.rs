@@ -64,7 +64,7 @@ impl QueueFamilyIndices {
 }
 
 pub struct SwapchainImage {
-    pub(crate) image: Image,
+    pub(crate) _image: Image,
     pub(crate) image_view: ImageView
 }
 pub fn create_instance(entry: Arc<ash::Entry>, window: &Window) -> Result<ash::Instance>
@@ -363,7 +363,7 @@ pub fn get_swapchain_images(
         .iter()
         .map(|&image| {
             let image_view = create_image_view(&image, format, ImageAspectFlags::COLOR, device)?;
-            Ok::<SwapchainImage, anyhow::Error>(SwapchainImage {image, image_view})
+            Ok::<SwapchainImage, anyhow::Error>(SwapchainImage { _image: image, image_view})
         })
         .collect::<Result<Vec<_>>>()?;
     Ok(swapchain_images_output)

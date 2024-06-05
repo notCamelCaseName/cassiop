@@ -34,7 +34,7 @@ pub struct Mesh {
 
 pub struct DoomApp
 {
-    entry: Arc<ash::Entry>,
+    _entry: Arc<ash::Entry>,
     instance: ash::Instance,
     physical_device: vk::PhysicalDevice,
     device: Device,
@@ -214,7 +214,7 @@ impl DoomApp
 
         info!("Initialization done");
         Ok(Self {
-            entry,
+            _entry: entry,
             instance,
             physical_device,
             device,
@@ -581,7 +581,7 @@ impl DoomApp
                             current_frame = (current_frame + 1) % max_frames;
                             let new_timestamp = std::time::Instant::now();
                             let elapsed = new_timestamp - timestamp;
-                            if (TO_WAIT > elapsed) {
+                            if TO_WAIT > elapsed {
                                 std::thread::sleep(TO_WAIT - elapsed);
                             }
                             let new_timestamp = std::time::Instant::now();

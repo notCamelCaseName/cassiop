@@ -1,4 +1,4 @@
-use ash::{khr::swapchain, khr::portability_subset, Device};
+use ash::{khr::swapchain, Device};
 use ash::vk::{ShaderModule, ShaderModuleCreateInfo};
 use log::{trace};
 

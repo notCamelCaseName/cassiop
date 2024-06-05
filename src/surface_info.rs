@@ -71,7 +71,7 @@ impl SurfaceInfo {
         }
     }
 
-    pub fn choose_swapchain_extents(&self, window: &window::Window) -> Result<vk::Extent2D> {
+    pub fn _choose_swapchain_extents(&self, window: &window::Window) -> Result<vk::Extent2D> {
         let current_extent = self.surface_capabilities.current_extent;
 
         if current_extent.width != u32::MAX {
