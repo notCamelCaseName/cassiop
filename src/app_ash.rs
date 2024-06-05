@@ -9,6 +9,7 @@ const TO_WAIT: std::time::Duration = std::time::Duration::from_nanos(1_000_000_0
 pub struct Vertex {
     pub position: [f32; 3], // offset 0
     pub color: [f32; 3],    // offset 12
+    pub uv: [f32; 2],       // offset 24
 }
 
 #[repr(C)]
@@ -16,6 +17,11 @@ pub struct ModelViewProjection {
     projection: Mat4,
     view: Mat4,
     model: Mat4,
+}
+
+#[repr(C)]
+pub struct FragUBO {
+    time: f32,
 }
 
 pub struct Mesh {
@@ -190,14 +196,21 @@ impl DoomApp
         ) = create_synchronization(&device, MAX_FRAMES)?;
 
         debug!("Creating uniform buffers");
-        let uniform_buffers = create_uniform_buffers(
+        let mvp_uniform_buffers = create_uniform_buffers::<ModelViewProjection>(
             &instance,
             &device,
             physical_device,
             swapchain_images.len()
         )?;
 
-        update_descriptor_sets(&device, &uniform_buffers, &descriptor_sets);
+        let frag_uniform_buffers = create_uniform_buffers::<FragUBO>(
+            &instance,
+            &device,
+            physical_device,
+            swapchain_images.len()
+        )?;
+
+        update_descriptor_sets(&device, &mvp_uniform_buffers, &frag_uniform_buffers, &descriptor_sets);
 
         info!("Initialization done");
         Ok(Self {
@@ -229,7 +242,7 @@ impl DoomApp
             queue_submit_complete_semaphores,
             queue_submit_complete_fences,
             meshes: Vec::new(),
-            uniform_buffers,
+            uniform_buffers: [mvp_uniform_buffers, frag_uniform_buffers].concat(),
         })
     }
     unsafe fn record_command_buffers(&self) -> Result<()>
@@ -312,7 +325,7 @@ impl DoomApp
         window
     }
 
-    unsafe fn draw(&self, current_frame: usize, mvp: &ModelViewProjection) -> Result<()>
+    unsafe fn draw(&self, current_frame: usize, mvp: &ModelViewProjection, frag_ubo: &FragUBO) -> Result<()>
     {
         self.device
             .wait_for_fences(&[self.queue_submit_complete_fences[current_frame]], true, u64::MAX)
@@ -342,6 +355,20 @@ impl DoomApp
             .context("Failed to map uniform buffer memory.")?
             as *mut ModelViewProjection;
         let src = mvp as *const ModelViewProjection;
+        std::ptr::copy_nonoverlapping(src, dst, 1);
+        self.device.unmap_memory(uniform_memory);
+
+        let uniform_memory = self.uniform_buffers[self.swapchain_images.len() + image_index as usize].1;
+        let dst = self.device
+            .map_memory(
+                uniform_memory,
+                0,
+                mem::size_of::<FragUBO>().try_into().unwrap(),
+                MemoryMapFlags::empty(),
+            )
+            .context("Failed to map uniform buffer memory.")?
+            as *mut FragUBO;
+        let src = frag_ubo as *const FragUBO;
         std::ptr::copy_nonoverlapping(src, dst, 1);
         self.device.unmap_memory(uniform_memory);
 
@@ -511,6 +538,8 @@ impl DoomApp
             projection: Mat4::perspective_rh(45.0_f32.to_radians(), WINDOW_WIDTH as f32/WINDOW_HEIGHT as f32, 0.1, 100.0),
         };
 
+        let mut frag_ubo = FragUBO { time: 0.0 };
+
         let mut timestamp = std::time::Instant::now();
 
         unsafe {self.record_command_buffers().unwrap()};
@@ -543,7 +572,7 @@ impl DoomApp
                         }
                         WindowEvent::RedrawRequested => {
                             unsafe {
-                                while let Err(..) = self.draw(current_frame, &mvp) {
+                                while let Err(..) = self.draw(current_frame, &mvp, &frag_ubo) {
                                     debug!("Couldn't draw, recreating swapchain");
                                     self.recreate_swapchain(&window).unwrap();
                                     debug!("OK")
@@ -557,6 +586,7 @@ impl DoomApp
                             }
                             let new_timestamp = std::time::Instant::now();
                             let elapsed = new_timestamp - timestamp;
+                            frag_ubo.time += elapsed.as_secs_f32();
                             let fps = 1./elapsed.as_secs_f64();
                             trace!("fps: {}", fps as u16);
                             mvp.model *= Mat4::from_rotation_y(100.0_f32.to_radians() * elapsed.as_secs_f32());

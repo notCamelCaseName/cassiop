@@ -32,7 +32,7 @@ pub(crate) use {
     },
 };
 pub use crate::app_ash::{Vertex, Mesh};
-use crate::app_ash::ModelViewProjection;
+use crate::app_ash::{FragUBO, ModelViewProjection};
 pub use crate::utility::create_shader_module;
 
 pub const WINDOW_TITLE: &str = "DoomApp";
@@ -450,12 +450,16 @@ pub fn create_graphics_pipeline(
     ];
 
     let attribute_descriptions = [
-        VertexInputAttributeDescription::default()
+        VertexInputAttributeDescription::default() // pos
             .format(Format::R32G32B32_SFLOAT),
-        VertexInputAttributeDescription::default()
+        VertexInputAttributeDescription::default() // color
             .location(1)
             .format(Format::R32G32B32_SFLOAT)
-            .offset(12)
+            .offset(12),
+        VertexInputAttributeDescription::default() // uv
+            .location(2)
+            .format(Format::R32G32_SFLOAT)
+            .offset(24)
     ];
 
     let vertex_input = PipelineVertexInputStateCreateInfo::default()
@@ -812,9 +816,15 @@ pub fn create_descriptor_set_layout(device: &Device) -> Result<DescriptorSetLayo
             .create_descriptor_set_layout(
                 &DescriptorSetLayoutCreateInfo::default().bindings(&[
                     DescriptorSetLayoutBinding::default()
+                        .binding(0)
                         .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                         .descriptor_count(1)
                         .stage_flags(ShaderStageFlags::VERTEX),
+                    DescriptorSetLayoutBinding::default()
+                        .binding(1)
+                        .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                        .descriptor_count(1)
+                        .stage_flags(ShaderStageFlags::FRAGMENT),
                 ]),
                 None,
             )
@@ -822,12 +832,13 @@ pub fn create_descriptor_set_layout(device: &Device) -> Result<DescriptorSetLayo
     }
 }
 
-pub fn create_uniform_buffers(
+pub fn create_uniform_buffers<T: Sized>(
     instance: &ash::Instance,
     device: &Device,
     physical_device: PhysicalDevice,
     count: usize,
-) -> Result<Vec<(Buffer, DeviceMemory)>> {
+) -> Result<Vec<(Buffer, DeviceMemory)>>
+{
     let mut buffers = Vec::with_capacity(count);
     for _ in 0..count {
         buffers.push(
@@ -837,7 +848,7 @@ pub fn create_uniform_buffers(
                 physical_device,
                 BufferUsageFlags::UNIFORM_BUFFER,
                 MemoryPropertyFlags::HOST_VISIBLE | MemoryPropertyFlags::HOST_COHERENT,
-                mem::size_of::<ModelViewProjection>().try_into().unwrap(),
+                mem::size_of::<T>().try_into().unwrap(),
             )
                 .context("Failed to create a uniform buffer.")?,
         );
@@ -884,11 +895,12 @@ pub fn allocate_descriptor_sets(
 
 pub fn update_descriptor_sets(
     device: &Device,
-    buffers: &[(Buffer, DeviceMemory)],
+    mvp_buffers: &[(Buffer, DeviceMemory)],
+    frag_buffers: &[(Buffer, DeviceMemory)],
     sets: &[DescriptorSet],
 )
 {
-    let buffer_infos = buffers
+    let mvp_buffer_infos = mvp_buffers
         .iter()
         .map(|(buffer, _)| {
             vec![DescriptorBufferInfo::default()
@@ -897,7 +909,16 @@ pub fn update_descriptor_sets(
         })
         .collect::<Vec<_>>();
 
-    let writes = buffer_infos
+    let frag_buffer_infos = frag_buffers
+        .iter()
+        .map(|(buffer, _)| {
+            vec![DescriptorBufferInfo::default()
+                .buffer(*buffer)
+                .range(mem::size_of::<FragUBO>().try_into().unwrap())]
+        })
+        .collect::<Vec<_>>();
+
+    let mut writes = mvp_buffer_infos
         .iter()
         .zip(sets)
         .map(|(buffer_info, set)| {
@@ -906,6 +927,17 @@ pub fn update_descriptor_sets(
                 .descriptor_type(DescriptorType::UNIFORM_BUFFER)
                 .buffer_info(buffer_info)
         }).collect::<Vec<_>>();
+
+    writes.extend(frag_buffer_infos
+        .iter()
+        .zip(sets)
+        .map(|(buffer_info, set)| {
+            WriteDescriptorSet::default()
+                .dst_set(*set)
+                .descriptor_type(DescriptorType::UNIFORM_BUFFER)
+                .buffer_info(buffer_info)
+                .dst_binding(1)
+        }).collect::<Vec<_>>());
 
     unsafe {
         device.update_descriptor_sets(&writes, &[]);
