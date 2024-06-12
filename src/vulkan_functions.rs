@@ -865,7 +865,7 @@ pub fn create_descriptor_pool(device: &Device, count: u32) -> Result<DescriptorP
                     .max_sets(count)
                     .pool_sizes(&[DescriptorPoolSize::default()
                         .ty(DescriptorType::UNIFORM_BUFFER)
-                        .descriptor_count(count)]),
+                        .descriptor_count(count*2)]),
                 None,
             )
             .context("Failed to create a descriptor pool.")
