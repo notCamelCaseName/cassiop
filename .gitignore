@@ -1,1 +1,8 @@
 /target
+/.direnv
+.envrc
+/.idea
+.vscode
+
+[Shader compilation remainders]
+/shaders/*.spv
